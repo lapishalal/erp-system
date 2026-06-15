@@ -1,0 +1,418 @@
+<?php
+
+namespace App\Filament\Resources;
+
+use App\Filament\Resources\PayrollPeriodResource\Pages;
+use App\Models\Employee;
+use App\Models\Payroll;
+use App\Models\PayrollDetail;
+use App\Models\PayrollPeriod;
+use App\Services\JournalService;
+use Filament\Forms;
+use Filament\Forms\Form;
+use Filament\Notifications\Notification;
+use Filament\Resources\Resource;
+use Filament\Tables;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+
+class PayrollPeriodResource extends Resource
+{
+    protected static ?string $model = PayrollPeriod::class;
+    protected static ?string $navigationIcon = 'heroicon-o-calendar';
+    protected static ?string $navigationGroup = 'Payroll';
+    protected static ?string $navigationLabel = 'Periode Payroll';
+    protected static ?string $modelLabel = 'Periode Payroll';
+    protected static ?string $pluralModelLabel = 'Periode Payroll';
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()->hasRole('Admin')
+            || auth()->user()->hasPermissionTo('manage_payroll');
+    }
+
+    public static function form(Form $form): Form
+    {
+        return $form
+            ->schema([
+                Forms\Components\TextInput::make('year')
+                    ->label('Tahun')
+                    ->numeric()
+                    ->required()
+                    ->default(now()->year),
+                Forms\Components\Select::make('month')
+                    ->label('Bulan')
+                    ->options([
+                        1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 4 => 'April',
+                        5 => 'Mei', 6 => 'Juni', 7 => 'Juli', 8 => 'Agustus',
+                        9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Desember',
+                    ])
+                    ->required()
+                    ->default(now()->month),
+                Forms\Components\TextInput::make('period_name')
+                    ->label('Nama Periode')
+                    ->required()
+                    ->default(fn (Forms\Get $get) => sprintf(
+                        '%s %s',
+                        $get('month') ? ['','Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'][$get('month')] : '',
+                        $get('year') ?? now()->year
+                    )),
+                Forms\Components\DatePicker::make('cutoff_date')
+                    ->label('Tanggal Cut-off')
+                    ->required()
+                    ->default(now()->endOfMonth()),
+                Forms\Components\DatePicker::make('payment_date')
+                    ->label('Tanggal Pembayaran')
+                    ->required()
+                    ->default(now()->addMonth()->startOfMonth()->addDays(4)),
+                Forms\Components\Select::make('status')
+                    ->label('Status')
+                    ->options([
+                        'DRAFT' => 'Draft',
+                        'PROCESSED' => 'Sudah Proses',
+                        'PAID' => 'Sudah Dibayar',
+                    ])
+                    ->default('DRAFT')
+                    ->required()
+                    ->disabled(),
+                Forms\Components\Textarea::make('notes')
+                    ->label('Catatan')
+                    ->columnSpanFull(),
+            ])->columns(2);
+    }
+
+    public static function table(Table $table): Table
+    {
+        return $table
+            ->modifyQueryUsing(fn (Builder $query) => $query->withCount('payrolls'))
+            ->columns([
+                Tables\Columns\TextColumn::make('period_name')
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('cutoff_date')
+                    ->date('d M Y'),
+                Tables\Columns\TextColumn::make('payment_date')
+                    ->date('d M Y')
+                    ->label('Tanggal Bayar'),
+                Tables\Columns\TextColumn::make('status')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'DRAFT' => 'gray',
+                        'PROCESSED' => 'warning',
+                        'PAID' => 'success',
+                    }),
+                Tables\Columns\TextColumn::make('payrolls_count')
+                    ->label('Jumlah Karyawan')
+                    ->numeric(),
+                Tables\Columns\TextColumn::make('total_net_salary')
+                    ->label('Total Gaji Bersih')
+                    ->money('IDR'),
+            ])
+            ->filters([
+                Tables\Filters\Filter::make('periode')
+                    ->form([
+                        Forms\Components\Select::make('year')
+                            ->label('Tahun')
+                            ->options(array_combine(range(2020, 2030), range(2020, 2030)))
+                            ->default(now()->year),
+                        Forms\Components\Select::make('month')
+                            ->label('Bulan')
+                            ->options([
+                                1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 4 => 'April',
+                                5 => 'Mei', 6 => 'Juni', 7 => 'Juli', 8 => 'Agustus',
+                                9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Desember',
+                            ]),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['year'] ?? null, fn (Builder $query, $year) => $query->where('year', $year))
+                            ->when($data['month'] ?? null, fn (Builder $query, $month) => $query->where('month', $month));
+                    }),
+                Tables\Filters\SelectFilter::make('status')
+                    ->options([
+                        'DRAFT' => 'Draft',
+                        'PROCESSED' => 'Sudah Proses',
+                        'PAID' => 'Sudah Dibayar',
+                    ]),
+            ])
+            ->actions([
+                Tables\Actions\Action::make('generate')
+                    ->label('Generate Payroll')
+                    ->icon('heroicon-o-calculator')
+                    ->color('primary')
+                    ->visible(fn (PayrollPeriod $record): bool => $record->status === 'DRAFT')
+                    ->requiresConfirmation()
+                    ->modalHeading('Generate Payroll')
+                    ->modalDescription('Akan membuat slip gaji untuk semua karyawan aktif berdasarkan komponen gaji. Lanjutkan?')
+                    ->action(function (PayrollPeriod $record) {
+                        self::generatePayrolls($record);
+                        Notification::make()
+                            ->title('Payroll berhasil digenerate!')
+                            ->success()
+                            ->send();
+                    }),
+                Tables\Actions\Action::make('process')
+                    ->label('Proses & Jurnal')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('warning')
+                    ->visible(fn (PayrollPeriod $record): bool => $record->status === 'DRAFT' && $record->payrolls()->exists())
+                    ->requiresConfirmation()
+                    ->modalHeading('Proses Payroll')
+                    ->modalDescription('Akan membuat jurnal: Beban Gaji, BPJS, dan Hutang Gaji. Lanjutkan?')
+                    ->action(function (PayrollPeriod $record) {
+                        self::processPayroll($record);
+                        Notification::make()
+                            ->title('Payroll diproses & jurnal tercatat!')
+                            ->success()
+                            ->send();
+                    }),
+                Tables\Actions\Action::make('pay')
+                    ->label('Bayar Gaji')
+                    ->icon('heroicon-o-banknotes')
+                    ->color('success')
+                    ->visible(fn (PayrollPeriod $record): bool => $record->status === 'PROCESSED')
+                    ->requiresConfirmation()
+                    ->modalHeading('Bayar Gaji')
+                    ->modalDescription('Akan mengurangi Kas dan melunasi Hutang Gaji. Lanjutkan?')
+                    ->form([
+                        Forms\Components\Select::make('account_id')
+                            ->label('Dibayar dari Akun Kas/Bank')
+                            ->options(\App\Models\Account::where('type', 'ASSET')->whereIn('code', ['1-10001', '1-10002'])->pluck('name', 'id'))
+                            ->required(),
+                        Forms\Components\DatePicker::make('payment_date')
+                            ->label('Tanggal Pembayaran')
+                            ->required()
+                            ->default(now()),
+                    ])
+                    ->action(function (PayrollPeriod $record, array $data) {
+                        self::payPayroll($record, $data);
+                        Notification::make()
+                            ->title('Gaji berhasil dibayar!')
+                            ->success()
+                            ->send();
+                    }),
+                Tables\Actions\Action::make('slip')
+					->label('Lihat Slip')
+					->icon('heroicon-o-document-text')
+					->url(fn (PayrollPeriod $record): string => \App\Filament\Resources\PayrollResource::getUrl('index', ['tableFilters' => ['payroll_period_id' => ['value' => $record->id]]]))
+					->openUrlInNewTab(),
+				Tables\Actions\ViewAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->visible(fn (PayrollPeriod $record): bool => $record->status === 'DRAFT'),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn (PayrollPeriod $record): bool => $record->status === 'DRAFT'),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+                ]),
+            ]);
+    }
+
+    protected static function generatePayrolls(PayrollPeriod $period): void
+    {
+        $employees = Employee::where('is_active', true)->get();
+
+        foreach ($employees as $emp) {
+            $exists = Payroll::where('employee_id', $emp->id)
+                ->where('payroll_period_id', $period->id)
+                ->exists();
+            if ($exists) continue;
+
+            $basicSalary = (float) $emp->basic_salary;
+            $allowances = (float) $emp->total_allowances;
+            $totalEarnings = $basicSalary + $allowances;
+
+            // BPJS
+            $bpjsKesCompany = round($basicSalary * ($emp->bpjs_kesehatan_company_pct / 100), 2);
+            $bpjsKesEmployee = round($basicSalary * ($emp->bpjs_kesehatan_employee_pct / 100), 2);
+            $bpjsTkCompany = round($basicSalary * ($emp->bpjs_ketenagakerjaan_company_pct / 100), 2);
+            $bpjsTkEmployee = round($basicSalary * ($emp->bpjs_ketenagakerjaan_employee_pct / 100), 2);
+
+            $totalBpjsCompany = $bpjsKesCompany + $bpjsTkCompany;
+            $totalBpjsEmployee = $bpjsKesEmployee + $bpjsTkEmployee;
+
+            // Gross = earnings + BPJS company
+            $grossSalary = $totalEarnings + $totalBpjsCompany;
+
+            // PPh 21 (simplified gross method)
+            $pph21 = 0;
+            if ($emp->pph21_enabled) {
+                $grossAnnual = $grossSalary * 12;
+                $biayaJabatan = min($grossAnnual * 0.05, 6000000);
+                $ptkp = match($emp->ptkp_status) {
+                    'K/0' => 58500000,
+                    'K/1' => 63000000,
+                    'K/2' => 67500000,
+                    'K/3' => 72000000,
+                    default => 54000000,
+                };
+                $pkp = max(0, $grossAnnual - $biayaJabatan - $ptkp);
+                $pph21Annual = $pkp * 0.05; // tarif progresif layer 1
+                $pph21 = round($pph21Annual / 12, 2);
+            }
+
+            // Kasbon / Pinjaman
+            $loanDeduction = 0;
+            $activeLoan = EmployeeLoan::where('employee_id', $emp->id)
+                ->where('status', 'ACTIVE')
+                ->first();
+            if ($activeLoan && $activeLoan->installment_amount > 0) {
+                $loanDeduction = min($activeLoan->installment_amount, $activeLoan->remaining_amount);
+                $activeLoan->paid_count += 1;
+                $activeLoan->remaining_amount -= $loanDeduction;
+                if ($activeLoan->remaining_amount <= 0.01) {
+                    $activeLoan->status = 'PAID';
+                    $activeLoan->remaining_amount = 0;
+                }
+                $activeLoan->save();
+            }
+
+            // Alpha (default 0, bisa edit manual nanti)
+            $alphaDays = 0;
+            $alphaDeduction = 0;
+
+            // Total deductions
+            $totalDeductions = $totalBpjsEmployee + $pph21 + $loanDeduction + $alphaDeduction;
+
+            // Net salary
+            $netSalary = $totalEarnings - $totalDeductions;
+
+            $payroll = Payroll::create([
+                'employee_id' => $emp->id,
+                'payroll_period_id' => $period->id,
+                'payroll_number' => 'PAY-' . $period->year . str_pad($period->month, 2, '0', STR_PAD_LEFT) . '-' . str_pad($emp->id, 4, '0', STR_PAD_LEFT),
+                'basic_salary' => $basicSalary,
+                'total_allowances' => $allowances,
+                'total_earnings' => $totalEarnings,
+                'bpjs_kesehatan_company' => $bpjsKesCompany,
+                'bpjs_kesehatan_employee' => $bpjsKesEmployee,
+                'bpjs_ketenagakerjaan_company' => $bpjsTkCompany,
+                'bpjs_ketenagakerjaan_employee' => $bpjsTkEmployee,
+                'total_bpjs_company' => $totalBpjsCompany,
+                'total_bpjs_employee' => $totalBpjsEmployee,
+                'pph21_deduction' => $pph21,
+                'loan_deduction' => $loanDeduction,
+                'alpha_days' => $alphaDays,
+                'alpha_deduction' => $alphaDeduction,
+                'total_deductions' => $totalDeductions,
+                'gross_salary' => $grossSalary,
+                'net_salary' => $netSalary,
+                'status' => 'DRAFT',
+                'notes' => null,
+                'created_by' => auth()->id(),
+            ]);
+
+            // Details: Earnings
+            PayrollDetail::create(['payroll_id' => $payroll->id, 'type' => 'EARNING', 'name' => 'Gaji Pokok', 'amount' => $basicSalary]);
+            if ($emp->position_allowance > 0) PayrollDetail::create(['payroll_id' => $payroll->id, 'type' => 'EARNING', 'name' => 'Tunjangan Jabatan', 'amount' => $emp->position_allowance]);
+            if ($emp->meal_allowance > 0) PayrollDetail::create(['payroll_id' => $payroll->id, 'type' => 'EARNING', 'name' => 'Tunjangan Makan', 'amount' => $emp->meal_allowance]);
+            if ($emp->transport_allowance > 0) PayrollDetail::create(['payroll_id' => $payroll->id, 'type' => 'EARNING', 'name' => 'Tunjangan Transport', 'amount' => $emp->transport_allowance]);
+            if ($emp->other_allowance > 0) PayrollDetail::create(['payroll_id' => $payroll->id, 'type' => 'EARNING', 'name' => 'Tunjangan Lainnya', 'amount' => $emp->other_allowance]);
+
+            // Details: BPJS Company
+            if ($bpjsKesCompany > 0) PayrollDetail::create(['payroll_id' => $payroll->id, 'type' => 'BPJS_COMPANY', 'name' => 'BPJS Kesehatan (Perusahaan)', 'amount' => $bpjsKesCompany]);
+            if ($bpjsTkCompany > 0) PayrollDetail::create(['payroll_id' => $payroll->id, 'type' => 'BPJS_COMPANY', 'name' => 'BPJS Ketenagakerjaan (Perusahaan)', 'amount' => $bpjsTkCompany]);
+
+            // Details: Deductions
+            if ($bpjsKesEmployee > 0) PayrollDetail::create(['payroll_id' => $payroll->id, 'type' => 'DEDUCTION', 'name' => 'BPJS Kesehatan (Karyawan)', 'amount' => $bpjsKesEmployee]);
+            if ($bpjsTkEmployee > 0) PayrollDetail::create(['payroll_id' => $payroll->id, 'type' => 'DEDUCTION', 'name' => 'BPJS Ketenagakerjaan (Karyawan)', 'amount' => $bpjsTkEmployee]);
+            if ($pph21 > 0) PayrollDetail::create(['payroll_id' => $payroll->id, 'type' => 'DEDUCTION', 'name' => 'PPh 21', 'amount' => $pph21]);
+            if ($loanDeduction > 0) PayrollDetail::create(['payroll_id' => $payroll->id, 'type' => 'DEDUCTION', 'name' => 'Kasbon / Pinjaman', 'amount' => $loanDeduction]);
+            if ($alphaDeduction > 0) PayrollDetail::create(['payroll_id' => $payroll->id, 'type' => 'DEDUCTION', 'name' => 'Potongan Absensi', 'amount' => $alphaDeduction]);
+        }
+    }
+
+    protected static function processPayroll(PayrollPeriod $period): void
+    {
+        $totalGross = $period->payrolls()->sum('gross_salary');
+        $totalNet = $period->payrolls()->sum('net_salary');
+        $totalBpjsCompany = $period->payrolls()->sum('total_bpjs_company');
+        $totalBpjsEmployee = $period->payrolls()->sum('total_bpjs_employee');
+
+        $period->payrolls()->update(['status' => 'PROCESSED']);
+        $period->update(['status' => 'PROCESSED']);
+
+        $accountBebanGaji = \App\Models\Account::where('code', '5-30001')->first();
+        $accountBebanBpjs = \App\Models\Account::where('code', '5-30002')->first();
+        $accountHutangGaji = \App\Models\Account::where('code', '2-10002')->first();
+        $accountHutangBpjs = \App\Models\Account::where('code', '2-10003')->first();
+
+        if ($accountBebanGaji && $accountHutangGaji) {
+            $details = [
+                ['account_id' => $accountBebanGaji->id, 'type' => 'DEBIT', 'amount' => $totalGross, 'detail_description' => 'Beban gaji & tunjangan periode ' . $period->period_name],
+                ['account_id' => $accountHutangGaji->id, 'type' => 'CREDIT', 'amount' => $totalNet + $totalBpjsEmployee, 'detail_description' => 'Hutang gaji karyawan + BPJS ditahan'],
+            ];
+
+            if ($accountBebanBpjs && $totalBpjsCompany > 0) {
+                $details[] = ['account_id' => $accountBebanBpjs->id, 'type' => 'DEBIT', 'amount' => $totalBpjsCompany, 'detail_description' => 'Beban BPJS perusahaan'];
+            }
+
+            if ($accountHutangBpjs && ($totalBpjsCompany + $totalBpjsEmployee) > 0) {
+                $details[] = ['account_id' => $accountHutangBpjs->id, 'type' => 'CREDIT', 'amount' => $totalBpjsCompany + $totalBpjsEmployee, 'detail_description' => 'Hutang BPJS total (perusahaan + karyawan)'];
+            }
+
+            $totalDebit = collect($details)->where('type', 'DEBIT')->sum('amount');
+            $totalCredit = collect($details)->where('type', 'CREDIT')->sum('amount');
+            $diff = $totalDebit - $totalCredit;
+
+            if (abs($diff) > 0.01) {
+                $hutangIndex = collect($details)->search(fn($d) => $d['account_id'] === $accountHutangGaji->id);
+                if ($hutangIndex !== false) {
+                    $details[$hutangIndex]['amount'] += $diff;
+                }
+            }
+
+            JournalService::createJournal(
+                'Payroll periode ' . $period->period_name,
+                $details,
+                PayrollPeriod::class,
+                $period->id,
+                auth()->id()
+            );
+        }
+    }
+
+    protected static function payPayroll(PayrollPeriod $period, array $data): void
+    {
+        $totalNet = $period->payrolls()->sum('net_salary');
+
+        $period->payrolls()->update(['status' => 'PAID']);
+        $period->update(['status' => 'PAID', 'payment_date' => $data['payment_date'] ?? now()]);
+
+        \App\Models\CashOut::create([
+            'account_id' => $data['account_id'],
+            'date' => $data['payment_date'] ?? now(),
+            'type' => 'SALARY',
+            'amount' => $totalNet,
+            'description' => 'Pembayaran gaji periode ' . $period->period_name,
+            'created_by' => auth()->id(),
+        ]);
+
+        $accountHutangGaji = \App\Models\Account::where('code', '2-10002')->first();
+        $accountKas = \App\Models\Account::find($data['account_id']);
+
+        if ($accountHutangGaji && $accountKas) {
+            JournalService::createJournal(
+                'Pembayaran gaji periode ' . $period->period_name,
+                [
+                    ['account_id' => $accountHutangGaji->id, 'type' => 'DEBIT', 'amount' => $totalNet, 'detail_description' => 'Pelunasan hutang gaji'],
+                    ['account_id' => $accountKas->id, 'type' => 'CREDIT', 'amount' => $totalNet, 'detail_description' => 'Pengeluaran kas untuk gaji'],
+                ],
+                PayrollPeriod::class,
+                $period->id,
+                auth()->id()
+            );
+        }
+    }
+
+    public static function getPages(): array
+    {
+        return [
+            'index' => Pages\ListPayrollPeriods::route('/'),
+            'create' => Pages\CreatePayrollPeriod::route('/create'),
+            'edit' => Pages\EditPayrollPeriod::route('/{record}/edit'),
+            'view' => Pages\ViewPayrollPeriod::route('/{record}'),
+        ];
+    }
+}

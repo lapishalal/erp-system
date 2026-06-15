@@ -1,0 +1,258 @@
+<?php
+
+namespace App\Filament\Resources;
+
+use App\Filament\Resources\SalesOrderResource\Pages;
+use App\Models\Customer;
+use App\Models\Product;
+use App\Models\SalesOrder;
+use Filament\Forms;
+use Filament\Forms\Form;
+use Filament\Resources\Resource;
+use Filament\Tables;
+use Filament\Tables\Table;
+
+class SalesOrderResource extends Resource
+{
+    protected static ?string $model = SalesOrder::class;
+    protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
+    protected static ?string $navigationGroup = 'Transaksi Penjualan';
+    protected static ?string $navigationLabel = 'Sales Order';
+    protected static ?string $modelLabel = 'Sales Order';
+    protected static ?string $pluralModelLabel = 'Sales Order';
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()->hasRole('Admin') || auth()->user()->hasPermissionTo('manage_sales_orders');
+    }
+	
+    public static function form(Form $form): Form
+    {
+        return $form
+            ->schema([
+                Forms\Components\Section::make('Informasi SO')
+                    ->schema([
+                        Forms\Components\TextInput::make('so_number')
+                            ->label('Nomor SO')
+                            ->required()
+                            ->unique(ignoreRecord: true)
+                            ->default(fn () => 'SO-' . date('Ymd') . '-' . rand(1000, 9999))
+                            ->maxLength(50),
+
+                        Forms\Components\DatePicker::make('date')
+                            ->label('Tanggal')
+                            ->required()
+                            ->default(now()),
+
+                        Forms\Components\Select::make('customer_id')
+                            ->label('Customer')
+                            ->options(Customer::pluck('name', 'id'))
+                            ->searchable()
+                            ->required(),
+
+                        Forms\Components\Select::make('status')
+                            ->label('Status')
+                            ->options([
+                                'DRAFT' => 'Draft',
+                                'OPEN' => 'Open',
+                                'PARTIAL' => 'Partial',
+                                'COMPLETE' => 'Complete',
+                                'CANCEL' => 'Cancel',
+                            ])
+                            ->default('DRAFT')
+                            ->required(),
+
+                        Forms\Components\Textarea::make('notes')
+                            ->label('Catatan')
+                            ->columnSpanFull(),
+                    ])->columns(2),
+
+                Forms\Components\Section::make('Detail Barang')
+                    ->schema([
+                        Forms\Components\Repeater::make('details')
+                            ->relationship('details')
+                            ->schema([
+                                Forms\Components\Select::make('product_id')
+                                    ->label('Barang')
+                                    ->options(Product::pluck('name', 'id'))
+                                    ->searchable()
+                                    ->required()
+                                    ->reactive()
+                                    ->afterStateUpdated(function ($state, Forms\Set $set) {
+                                        $product = Product::find($state);
+                                        if ($product) {
+                                            $set('unit_price', $product->default_sale_price);
+                                            $set('cost_price', $product->last_buy_price);
+                                        }
+                                    }),
+
+                                Forms\Components\TextInput::make('qty')
+                                    ->label('Qty')
+                                    ->numeric()
+                                    ->required()
+                                    ->default(1)
+                                    ->live()
+                                    ->afterStateUpdated(function ($state, $get, Forms\Set $set) {
+                                        $price = $get('unit_price') ?? 0;
+                                        $set('subtotal', ($state ?? 0) * $price);
+                                    }),
+
+                                Forms\Components\TextInput::make('unit_price')
+                                    ->label('Harga Satuan')
+                                    ->numeric()
+                                    ->prefix('Rp')
+                                    ->required()
+                                    ->live()
+                                    ->afterStateUpdated(function ($state, $get, Forms\Set $set) {
+                                        $qty = $get('qty') ?? 0;
+                                        $set('subtotal', $qty * ($state ?? 0));
+                                    }),
+
+                                Forms\Components\TextInput::make('cost_price')
+                                    ->label('HPP')
+                                    ->numeric()
+                                    ->prefix('Rp')
+                                    ->disabled()
+                                    ->dehydrated(true),
+
+                                Forms\Components\TextInput::make('subtotal')
+                                    ->label('Subtotal')
+                                    ->numeric()
+                                    ->prefix('Rp')
+                                    ->disabled()
+                                    ->dehydrated(true),
+                            ])
+                            ->columns(5)
+                            ->addActionLabel('Tambah Barang')
+                            ->live()
+                            ->afterStateUpdated(function ($state, Forms\Set $set) {
+                                $totalQty = 0;
+                                $totalAmount = 0;
+                                $totalCost = 0;
+                                foreach ($state ?? [] as $item) {
+                                    $qty = $item['qty'] ?? 0;
+                                    $price = $item['unit_price'] ?? 0;
+                                    $cost = $item['cost_price'] ?? 0;
+                                    $totalQty += $qty;
+                                    $totalAmount += $qty * $price;
+                                    $totalCost += $qty * $cost;
+                                }
+                                $set('total_qty', $totalQty);
+                                $set('total_amount', $totalAmount);
+                                $set('total_cost', $totalCost);
+                                $set('profit', $totalAmount - $totalCost);
+                            }),
+                    ]),
+
+                Forms\Components\Section::make('Ringkasan')
+                    ->schema([
+                        Forms\Components\TextInput::make('total_qty')
+                            ->label('Total Qty')
+                            ->numeric()
+                            ->disabled()
+                            ->dehydrated(true),
+
+                        Forms\Components\TextInput::make('total_amount')
+                            ->label('Total Omset')
+                            ->numeric()
+                            ->prefix('Rp')
+                            ->disabled()
+                            ->dehydrated(true),
+
+                        Forms\Components\TextInput::make('total_cost')
+                            ->label('Total HPP')
+                            ->numeric()
+                            ->prefix('Rp')
+                            ->disabled()
+                            ->dehydrated(true),
+
+                        Forms\Components\TextInput::make('profit')
+                            ->label('Profit')
+                            ->numeric()
+                            ->prefix('Rp')
+                            ->disabled()
+                            ->dehydrated(true),
+                    ])->columns(4),
+            ]);
+    }
+
+    public static function table(Table $table): Table
+    {
+        return $table
+            ->columns([
+                Tables\Columns\TextColumn::make('so_number')
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('date')
+                    ->date('d M Y')
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('customer.name'),
+                Tables\Columns\TextColumn::make('status')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'DRAFT' => 'gray',
+                        'OPEN' => 'info',
+                        'PARTIAL' => 'warning',
+                        'COMPLETE' => 'success',
+                        'CANCEL' => 'danger',
+                    }),
+                Tables\Columns\TextColumn::make('total_qty'),
+                Tables\Columns\TextColumn::make('total_amount')
+                    ->money('IDR'),
+                Tables\Columns\TextColumn::make('profit')
+                    ->money('IDR'),
+            ])
+            ->filters([
+                Tables\Filters\SelectFilter::make('status')
+                    ->options([
+                        'DRAFT' => 'Draft',
+                        'OPEN' => 'Open',
+                        'PARTIAL' => 'Partial',
+                        'COMPLETE' => 'Complete',
+                        'CANCEL' => 'Cancel',
+                    ]),
+                Tables\Filters\SelectFilter::make('customer_id')
+                    ->relationship('customer', 'name')
+                    ->searchable()
+                    ->preload(),
+            ])
+            ->actions([
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('createDO')
+                        ->label('Buat Surat Jalan')
+                        ->icon('heroicon-o-truck')
+                        ->url(fn (SalesOrder $record): string => 
+                            url('/admin/delivery-orders/create?so_id=' . $record->id)
+                        )
+                        ->visible(fn (SalesOrder $record): bool => in_array($record->status, ['OPEN', 'PARTIAL'])),
+
+                    Tables\Actions\Action::make('createInvoice')
+                        ->label('Buat Faktur')
+                        ->icon('heroicon-o-document-text')
+                        ->url(fn (SalesOrder $record): string => 
+                            url('/admin/sales-invoices/create?so_id=' . $record->id)
+                        )
+                        ->visible(fn (SalesOrder $record): bool => in_array($record->status, ['OPEN', 'PARTIAL', 'COMPLETE'])),
+
+                    Tables\Actions\ViewAction::make(),
+                    Tables\Actions\EditAction::make(),
+                    Tables\Actions\DeleteAction::make(),
+                ]),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+                ]),
+            ]);
+    }
+
+    public static function getPages(): array
+    {
+        return [
+            'index' => Pages\ListSalesOrders::route('/'),
+            'create' => Pages\CreateSalesOrder::route('/create'),
+            'edit' => Pages\EditSalesOrder::route('/{record}/edit'),
+            'view' => Pages\ViewSalesOrder::route('/{record}'),
+        ];
+    }
+}

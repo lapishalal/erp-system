@@ -1,0 +1,907 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Customer;
+use App\Models\PosTransaction;
+use App\Models\PosTransactionDetail;
+use App\Models\Product;
+use App\Models\SalesOrder;
+use App\Models\SalesOrderDetail;
+use App\Models\TelegramSession;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+class TelegramBotFlowService
+{
+    protected TelegramService $tg;
+
+    public function __construct()
+    {
+        $this->tg = new TelegramService();
+    }
+
+    public function handleUpdate(array $update): void
+    {
+        Log::info('=== handleUpdate START ===', ['update' => $update]);
+
+        if (isset($update['callback_query'])) {
+            $this->handleCallback($update['callback_query']);
+            return;
+        }
+
+        if (isset($update['message']['photo'])) {
+            $chatId = (string) $update['message']['chat']['id'];
+            $session = TelegramSession::firstOrNew(['chat_id' => $chatId]);
+            if (!$session->exists) {
+                $session->state = 'idle';
+                $session->save();
+            }
+            $session->touch();
+
+            if ($session->state === 'so_ai_input') {
+                $this->handleSoAiImage($chatId, $update['message']['photo'], $session);
+                return;
+            }
+
+            $this->tg->sendMessage($chatId, "Kirim foto tidak didukung di mode ini. Ketik /menu untuk bantuan.");
+            return;
+        }
+
+        if (!isset($update['message']['text'])) {
+            Log::warning('No text in message');
+            return;
+        }
+
+        $chatId = (string) $update['message']['chat']['id'];
+        $text = trim($update['message']['text']);
+
+        Log::info('Processing message', ['chatId' => $chatId, 'text' => $text]);
+
+        try {
+            $session = TelegramSession::firstOrNew(['chat_id' => $chatId]);
+            Log::info('Session loaded', ['exists' => $session->exists, 'state' => $session->state ?? 'new']);
+
+            if (!$session->exists) {
+                $session->state = 'idle';
+                $session->save();
+            }
+            $session->touch();
+        } catch (\Exception $e) {
+            Log::error('Session error: ' . $e->getMessage());
+            throw $e;
+        }
+
+        if (str_starts_with($text, '/')) {
+            $this->handleCommand($chatId, $text, $session);
+            return;
+        }
+
+        $this->handleState($chatId, $text, $session);
+    }
+
+    protected function handleCommand(string $chatId, string $text, TelegramSession $session): void
+    {
+        $cmd = explode(' ', $text)[0];
+
+        Log::info('Handling command', ['cmd' => $cmd]);
+
+        switch ($cmd) {
+            case '/start':
+                $this->cmdStart($chatId, $session);
+                break;
+            case '/menu':
+                $this->cmdMenu($chatId, $session);
+                break;
+            case '/pos':
+                $this->cmdPos($chatId, $session);
+                break;
+            case '/so':
+                $this->cmdSo($chatId, $session);
+                break;
+            case '/cekharga':
+                $this->cmdCekHarga($chatId, $text);
+                break;
+            default:
+                $this->tg->sendMessage($chatId, "❌ Perintah tidak dikenal.\nKetik /menu untuk bantuan.");
+        }
+    }
+
+    protected function handleState(string $chatId, string $text, TelegramSession $session): void
+    {
+        Log::info('Handling state', ['state' => $session->state]);
+
+        switch ($session->state) {
+            case 'awaiting_email':
+                $this->handleAuthEmail($chatId, $text, $session);
+                break;
+            case 'awaiting_password':
+                $this->handleAuthPassword($chatId, $text, $session);
+                break;
+            case 'pos_product':
+                $this->handlePosProduct($chatId, $text, $session);
+                break;
+            case 'pos_qty':
+                $this->handlePosQty($chatId, $text, $session);
+                break;
+            case 'pos_payment_amount':
+                $this->handlePosPaymentAmount($chatId, $text, $session);
+                break;
+            case 'so_customer_search':
+                $this->handleSoCustomerSearch($chatId, $text, $session);
+                break;
+            case 'so_ai_input':
+                $this->handleSoAiInput($chatId, $text, $session);
+                break;
+            case 'so_bulk_ambiguous':
+                $this->handleSoBulkAmbiguous($chatId, $text, $session);
+                break;
+            default:
+                $this->tg->sendMessage($chatId, "Saya tidak mengerti pesan Anda.\nKetik /menu untuk melihat pilihan.");
+        }
+    }
+
+    protected function handleCallback(array $callback): void
+    {
+        $chatId = (string) $callback['message']['chat']['id'];
+        $data = $callback['data'];
+        $msgId = $callback['message']['message_id'];
+
+        $session = TelegramSession::where('chat_id', $chatId)->first();
+        if (!$session || !$session->user_id) {
+            $this->tg->answerCallback($callback['id'], 'Silakan /start dulu');
+            return;
+        }
+
+        $this->tg->answerCallback($callback['id']);
+
+        if (str_starts_with($data, 'so_customer|')) {
+            $customerId = (int) str_replace('so_customer|', '', $data);
+            $customer = Customer::find($customerId);
+            if (!$customer) {
+                $this->tg->sendMessage($chatId, "❌ Customer tidak ditemukan. Ketik /so untuk ulang.");
+                return;
+            }
+            $session->update(['state' => 'so_ai_input', 'data' => array_merge($session->data ?? [], ['customer_id' => $customerId, 'customer_name' => $customer->name, 'items' => []])]);
+            $this->tg->editMessage($chatId, $msgId, "✅ Customer: <b>{$customer->name}</b>\n\n🤖 <b>MODE AI AKTIF</b>\n\nKirim pesanan dengan cara apa saja:\n• Text bebas: <code>sabun mandi 5 harga 42rb</code>\n• Format: <code>Nama/Qty/Harga</code>\n• Foto struk: langsung kirim gambar\n\nAI akan otomatis parse. Ketik <code>SELESAI</code> untuk preview.");
+            return;
+        }
+
+        if (str_starts_with($data, 'so_customer_next|')) {
+            $parts = explode('|', $data);
+            $page = (int) ($parts[1] ?? 0);
+            $query = $parts[2] ?? '';
+            $this->showCustomerSearchResults($chatId, $session, $query, $page, $msgId);
+            return;
+        }
+
+        if (str_starts_with($data, 'so_product_select|')) {
+            $productId = (int) str_replace('so_product_select|', '', $data);
+            $dataArr = $session->data ?? [];
+            $pending = $dataArr['pending_ambiguous'] ?? null;
+
+            if (!$pending) {
+                $this->tg->sendMessage($chatId, "❌ Session expired. Ketik /so untuk ulang.");
+                return;
+            }
+
+            $product = Product::find($productId);
+            if (!$product) {
+                $this->tg->sendMessage($chatId, "❌ Produk tidak ditemukan.");
+                return;
+            }
+
+            $dataArr['items'][] = [
+                'product_id' => $product->id,
+                'code' => $product->code,
+                'name' => $product->name,
+                'qty' => $pending['qty'],
+                'unit_price' => $pending['harga'],
+                'cost_price' => (float) ($product->last_buy_price ?? 0),
+                'subtotal' => $pending['qty'] * $pending['harga'],
+                'normal_price' => (float) $product->default_sale_price,
+            ];
+            unset($dataArr['pending_ambiguous']);
+            $session->update(['data' => $dataArr]);
+
+            $this->tg->editMessage($chatId, $msgId, "✅ <b>{$product->name}</b> ditambahkan.\n\nKirim baris berikutnya, atau ketik <code>SELESAI</code> untuk preview.");
+
+            $remaining = $dataArr['remaining_input'] ?? '';
+            if (!empty($remaining)) {
+                $this->processRemainingInput($chatId, $remaining, $session);
+            }
+            return;
+        }
+
+        if (str_starts_with($data, 'pos_addmore|')) {
+            $val = str_replace('pos_addmore|', '', $data);
+            if ($val === 'checkout') {
+                $this->showPosCheckout($chatId, $session);
+            } else {
+                $session->update(['state' => 'pos_product']);
+                $this->tg->sendMessage($chatId, "Kirim kode/nama barang selanjutnya:");
+            }
+            return;
+        }
+
+        if (str_starts_with($data, 'pos_paymethod|')) {
+            $method = str_replace('pos_paymethod|', '', $data);
+            $dataArr = $session->data ?? [];
+            $dataArr['payment_method'] = $method;
+            $session->update(['data' => $dataArr]);
+
+            if ($method === 'CASH') {
+                $session->update(['state' => 'pos_payment_amount']);
+                $total = number_format($dataArr['total'] ?? 0, 0, ',', '.');
+                $this->tg->sendMessage($chatId, "💰 Total: Rp {$total}\nMasukkan jumlah uang diterima (angka saja):");
+            } else {
+                $this->processPos($chatId, $session, $method, $dataArr['total'] ?? 0);
+            }
+            return;
+        }
+
+        if (str_starts_with($data, 'so_save|')) {
+            $this->processSo($chatId, $session);
+            return;
+        }
+
+        if (str_starts_with($data, 'so_retry|')) {
+            $session->update(['state' => 'so_ai_input', 'data' => array_merge($session->data ?? [], ['items' => []])]);
+            $this->tg->editMessage($chatId, $msgId, "🔄 Input ulang.\n\nKirim pesanan dengan cara apa saja:\n• Text bebas\n• Format: <code>Nama/Qty/Harga</code>\n• Foto struk");
+            return;
+        }
+
+        if (str_starts_with($data, 'so_addmore|')) {
+            $session->update(['state' => 'so_ai_input']);
+            $this->tg->editMessage($chatId, $msgId, "➕ Tambah produk.\n\nKirim text atau foto:");
+            return;
+        }
+    }
+
+    protected function cmdStart(string $chatId, TelegramSession $session): void
+    {
+        Log::info('cmdStart called', ['chatId' => $chatId]);
+
+        $user = User::where('telegram_chat_id', $chatId)->first();
+        if ($user) {
+            $session->update(['user_id' => $user->id, 'state' => 'idle']);
+            $this->tg->sendMessage($chatId, "👋 Halo <b>{$user->name}</b>!\nAkun Telegram sudah terhubung dengan ERP.\n\nKetik /menu untuk mulai.");
+            return;
+        }
+
+        $session->update(['state' => 'awaiting_email', 'data' => null]);
+        $this->tg->sendMessage($chatId, "👋 Selamat datang di <b>ERP Bot</b>!\n\nSilakan masukkan email Anda untuk login:");
+    }
+
+    protected function cmdMenu(string $chatId, TelegramSession $session): void
+    {
+        if (!$session->user_id) {
+            $this->tg->sendMessage($chatId, "Silakan /start untuk login dulu.");
+            return;
+        }
+        $menu = "📋 <b>MENU UTAMA ERP</b>\n\n"
+            . "/pos — Transaksi POS (jual cepat)\n"
+            . "/so — Buat Sales Order\n"
+            . "/cekharga [kode] — Cek stok & harga\n\n"
+            . "Ketik perintah di atas untuk mulai.";
+        $this->tg->sendMessage($chatId, $menu);
+    }
+
+    protected function cmdCekHarga(string $chatId, string $text): void
+    {
+        $parts = explode(' ', $text, 2);
+        $search = $parts[1] ?? null;
+        if (!$search) {
+            $this->tg->sendMessage($chatId, "Contoh: /cekharga BRG001");
+            return;
+        }
+        $product = Product::where('code', $search)
+            ->orWhere('name', 'like', "%{$search}%")
+            ->with('stock')
+            ->first();
+
+        if (!$product) {
+            $this->tg->sendMessage($chatId, "❌ Barang tidak ditemukan.");
+            return;
+        }
+
+        $stock = $product->stock?->available_stock ?? 0;
+        $price = number_format($product->default_sale_price, 0, ',', '.');
+        $this->tg->sendMessage($chatId, "📦 <b>{$product->name}</b>\nKode: <code>{$product->code}</code>\nHarga: Rp {$price}\nStok tersedia: <b>{$stock}</b> {$product->unit}");
+    }
+
+    protected function cmdPos(string $chatId, TelegramSession $session): void
+    {
+        if (!$session->user_id) {
+            $this->tg->sendMessage($chatId, "Silakan /start dulu.");
+            return;
+        }
+        $session->update(['state' => 'pos_product', 'data' => ['cart' => [], 'discount' => 0]]);
+        $this->tg->sendMessage($chatId, "🛒 <b>MODE POS</b>\n\nKirim kode barang atau nama barang yang dibeli:");
+    }
+
+    protected function handlePosProduct(string $chatId, string $text, TelegramSession $session): void
+    {
+        $product = Product::where('code', $text)
+            ->orWhere('name', 'like', "%{$text}%")
+            ->where('is_active', true)
+            ->first();
+
+        if (!$product) {
+            $this->tg->sendMessage($chatId, "❌ Barang tidak ditemukan.\nCoba kirim kode atau nama lain:");
+            return;
+        }
+
+        $stock = $product->stock?->available_stock ?? 0;
+        if ($stock <= 0) {
+            $this->tg->sendMessage($chatId, "⚠️ Stok <b>{$product->name}</b> habis.\nCoba barang lain:");
+            return;
+        }
+
+        $price = number_format($product->default_sale_price, 0, ',', '.');
+        $data = $session->data ?? [];
+        $data['current_product'] = [
+            'id' => $product->id,
+            'code' => $product->code,
+            'name' => $product->name,
+            'price' => (float) $product->default_sale_price,
+            'stock' => $stock,
+        ];
+        $session->update(['state' => 'pos_qty', 'data' => $data]);
+
+        $this->tg->sendMessage($chatId, "📦 <b>{$product->name}</b>\nKode: <code>{$product->code}</code>\nHarga: Rp {$price}\nStok: {$stock} {$product->unit}\n\nMasukkan jumlah (qty):");
+    }
+
+    protected function handlePosQty(string $chatId, string $text, TelegramSession $session): void
+    {
+        $qty = (int) $text;
+        if ($qty <= 0) {
+            $this->tg->sendMessage($chatId, "Qty harus angka lebih dari 0.\nCoba lagi:");
+            return;
+        }
+
+        $data = $session->data ?? [];
+        $prod = $data['current_product'] ?? null;
+        if (!$prod) {
+            $session->update(['state' => 'pos_product']);
+            $this->tg->sendMessage($chatId, "Session expired. Kirim kode barang lagi:");
+            return;
+        }
+
+        if ($qty > $prod['stock']) {
+            $this->tg->sendMessage($chatId, "⚠️ Stok tidak mencukupi. Tersedia: {$prod['stock']}.\nMasukkan qty lagi:");
+            return;
+        }
+
+        $data['cart'][] = [
+            'product_id' => $prod['id'],
+            'code' => $prod['code'],
+            'name' => $prod['name'],
+            'price' => $prod['price'],
+            'qty' => $qty,
+            'subtotal' => $prod['price'] * $qty,
+        ];
+        unset($data['current_product']);
+
+        $session->update(['state' => 'pos_product', 'data' => $data]);
+
+        $cartText = $this->formatCart($data['cart']);
+        $this->tg->sendMessage($chatId, "{$cartText}\nTambah barang lagi atau checkout?", [
+            'inline_keyboard' => [
+                [['text' => '➕ Tambah Barang', 'callback_data' => 'pos_addmore|yes']],
+                [['text' => '💰 Checkout', 'callback_data' => 'pos_addmore|checkout']],
+            ]
+        ]);
+    }
+
+    protected function showPosCheckout(string $chatId, TelegramSession $session): void
+    {
+        $data = $session->data ?? [];
+        $cart = $data['cart'] ?? [];
+        if (empty($cart)) {
+            $this->tg->sendMessage($chatId, "Keranjang kosong. Ketik /pos untuk mulai.");
+            return;
+        }
+
+        $subtotal = collect($cart)->sum('subtotal');
+        $discount = $data['discount'] ?? 0;
+        $total = $subtotal - $discount;
+
+        $data['subtotal'] = $subtotal;
+        $data['total'] = $total;
+        $session->update(['data' => $data]);
+
+        $text = $this->formatCart($cart);
+        $text .= "\n━━━━━━━━━━━━━━\n";
+        $text .= "Subtotal: Rp " . number_format($subtotal, 0, ',', '.') . "\n";
+        $text .= "Total: Rp <b>" . number_format($total, 0, ',', '.') . "</b>\n\n";
+        $text .= "Pilih metode pembayaran:";
+
+        $this->tg->sendMessage($chatId, $text, [
+            'inline_keyboard' => [
+                [
+                    ['text' => '💵 Tunai', 'callback_data' => 'pos_paymethod|CASH'],
+                    ['text' => '📱 QRIS', 'callback_data' => 'pos_paymethod|QRIS'],
+                ],
+                [
+                    ['text' => '💳 Debit', 'callback_data' => 'pos_paymethod|DEBIT'],
+                    ['text' => '🏦 Transfer', 'callback_data' => 'pos_paymethod|TRANSFER'],
+                ],
+            ]
+        ]);
+    }
+
+    protected function handlePosPaymentAmount(string $chatId, string $text, TelegramSession $session): void
+    {
+        $paid = (float) str_replace(['.', ','], ['', '.'], $text);
+        $data = $session->data ?? [];
+        $total = $data['total'] ?? 0;
+
+        if ($paid < $total) {
+            $this->tg->sendMessage($chatId, "❌ Uang kurang. Total Rp " . number_format($total, 0, ',', '.') . "\nMasukkan jumlah bayar:");
+            return;
+        }
+
+        $this->processPos($chatId, $session, 'CASH', $paid);
+    }
+
+    protected function processPos(string $chatId, TelegramSession $session, string $method, float $paidAmount): void
+    {
+        $data = $session->data ?? [];
+        $cart = $data['cart'] ?? [];
+        $userId = $session->user_id;
+
+        if (empty($cart)) return;
+
+        $subtotal = collect($cart)->sum('subtotal');
+        $discount = $data['discount'] ?? 0;
+        $total = $subtotal - $discount;
+        $change = $paidAmount - $total;
+
+        DB::beginTransaction();
+        try {
+            $pos = PosTransaction::create([
+                'transaction_number' => 'POS-TG-' . date('Ymd') . '-' . rand(1000, 9999),
+                'date' => now(),
+                'customer_id' => null,
+                'subtotal' => $subtotal,
+                'discount' => $discount,
+                'tax' => 0,
+                'total' => $total,
+                'paid_amount' => $paidAmount,
+                'change_amount' => $change,
+                'payment_method' => $method,
+                'created_by' => $userId,
+            ]);
+
+            foreach ($cart as $item) {
+                PosTransactionDetail::create([
+                    'pos_transaction_id' => $pos->id,
+                    'product_id' => $item['product_id'],
+                    'qty' => $item['qty'],
+                    'price' => $item['price'],
+                    'subtotal' => $item['subtotal'],
+                ]);
+            }
+
+            DB::commit();
+
+            $struk = $this->buildStruk($pos, $cart, $method, $paidAmount, $change);
+            $this->tg->sendMessage($chatId, $struk);
+
+            $session->update(['state' => 'idle', 'data' => null]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('POS error: ' . $e->getMessage());
+            $this->tg->sendMessage($chatId, "❌ Gagal proses transaksi: " . $e->getMessage());
+        }
+    }
+
+    protected function buildStruk(PosTransaction $pos, array $cart, string $method, float $paid, float $change): string
+    {
+        $text = "🧾 <b>STRUK PENJUALAN</b>\n";
+        $text .= "No: <code>{$pos->transaction_number}</code>\n";
+        $text .= "Tgl: " . $pos->date->format('d M Y H:i') . "\n";
+        $text .= "━━━━━━━━━━━━━━\n";
+
+        foreach ($cart as $i => $item) {
+            $line = $item['price'] * $item['qty'];
+            $text .= ($i + 1) . ". {$item['name']}\n";
+            $text .= "   {$item['qty']} x Rp " . number_format($item['price'], 0, ',', '.') . " = Rp " . number_format($line, 0, ',', '.') . "\n";
+        }
+
+        $text .= "━━━━━━━━━━━━━━\n";
+        $text .= "Subtotal: Rp " . number_format($pos->subtotal, 0, ',', '.') . "\n";
+        $text .= "Total: Rp <b>" . number_format($pos->total, 0, ',', '.') . "</b>\n";
+        $text .= "Bayar: Rp " . number_format($paid, 0, ',', '.') . "\n";
+        $text .= "Kembalian: Rp " . number_format($change, 0, ',', '.') . "\n";
+        $text .= "Metode: {$method}\n";
+        $text .= "━━━━━━━━━━━━━━\n";
+        $text .= "Terima kasih! 🙏";
+
+        return $text;
+    }
+
+    protected function cmdSo(string $chatId, TelegramSession $session): void
+    {
+        if (!$session->user_id) {
+            $this->tg->sendMessage($chatId, "Silakan /start dulu.");
+            return;
+        }
+
+        $session->update(['state' => 'so_customer_search', 'data' => ['items' => []]]);
+        $this->tg->sendMessage($chatId, "📋 <b>BUAT SALES ORDER</b>\n\nKetik nama customer (min 3 huruf):\nContoh: <code>PT Maju</code> atau <code>Toko ABC</code>");
+    }
+
+    protected function handleSoCustomerSearch(string $chatId, string $text, TelegramSession $session): void
+    {
+        if (strlen($text) < 3) {
+            $this->tg->sendMessage($chatId, "❌ Ketik minimal 3 huruf.\nCoba lagi:");
+            return;
+        }
+
+        $this->showCustomerSearchResults($chatId, $session, $text, 0);
+    }
+
+    protected function showCustomerSearchResults(string $chatId, TelegramSession $session, string $query, int $page, int $editMessageId = null): void
+    {
+        $perPage = 10;
+        $offset = $page * $perPage;
+
+        $customers = Customer::where('is_active', true)
+            ->where(function ($q) use ($query) {
+                $q->where('name', 'like', "%{$query}%")
+                  ->orWhere('code', 'like', "%{$query}%");
+            })
+            ->orderBy('name')
+            ->skip($offset)
+            ->take($perPage + 1)
+            ->get();
+
+        $hasMore = $customers->count() > $perPage;
+        $customers = $customers->take($perPage);
+
+        if ($customers->isEmpty()) {
+            $msg = "❌ Customer tidak ditemukan untuk \"<b>{$query}</b>\".\n\nCoba ketik nama lain:";
+            if ($editMessageId) {
+                $this->tg->editMessage($chatId, $editMessageId, $msg);
+            } else {
+                $this->tg->sendMessage($chatId, $msg);
+            }
+            return;
+        }
+
+        $text = "🔍 Ditemukan customer untuk \"<b>{$query}</b>\":\n\nKlik untuk memilih:";
+
+        $keyboard = [];
+        foreach ($customers as $c) {
+            $keyboard[] = [['text' => $c->name, 'callback_data' => 'so_customer|' . $c->id]];
+        }
+
+        if ($hasMore) {
+            $keyboard[] = [['text' => '▶️ Lihat 10 Berikutnya', 'callback_data' => 'so_customer_next|' . ($page + 1) . '|' . $query]];
+        }
+
+        if ($editMessageId) {
+            $this->tg->editMessage($chatId, $editMessageId, $text, ['inline_keyboard' => $keyboard]);
+        } else {
+            $this->tg->sendMessage($chatId, $text, ['inline_keyboard' => $keyboard]);
+        }
+    }
+
+    protected function handleSoAiInput(string $chatId, string $text, TelegramSession $session): void
+    {
+        if (strtoupper(trim($text)) === 'SELESAI') {
+            $this->showSoPreview($chatId, $session);
+            return;
+        }
+
+        $ai = new AiParserService();
+        $result = $ai->parseOrderText($text);
+
+        if (isset($result['error'])) {
+            $this->tg->sendMessage($chatId, "❌ Tidak bisa parse input.\n\nCoba pakai format manual:\n<code>NamaProduk/Qty/HargaClosing</code>\nContoh: <code>Sabun Mandi/5/42000</code>");
+            return;
+        }
+
+        $items = $result['items'] ?? [];
+        if (empty($items)) {
+            $this->tg->sendMessage($chatId, "❌ Tidak mendeteksi item.\nCoba deskripsikan lebih jelas atau pakai format:\n<code>Nama/Qty/Harga</code>");
+            return;
+        }
+
+        $this->processAiItems($chatId, $items, $session, $result['notes'] ?? '');
+    }
+
+    protected function handleSoAiImage(string $chatId, array $photoArray, TelegramSession $session): void
+    {
+        $fileId = end($photoArray)['file_id'] ?? null;
+        if (!$fileId) {
+            $this->tg->sendMessage($chatId, "❌ Gagal membaca foto.");
+            return;
+        }
+
+        $this->tg->sendMessage($chatId, "⏳ AI sedang membaca struk...");
+
+        $fileData = $this->tg->downloadFileBase64($fileId);
+        if (!$fileData) {
+            $this->tg->sendMessage($chatId, "❌ Gagal download foto.");
+            return;
+        }
+
+        $ai = new AiParserService();
+        $result = $ai->parseOrderImage($fileData['base64'], $fileData['mime_type']);
+
+        if (isset($result['error'])) {
+            $this->tg->sendMessage($chatId, "❌ AI Error: {$result['error']}\n\nCoba kirim text manual.");
+            return;
+        }
+
+        $items = $result['items'] ?? [];
+        if (empty($items)) {
+            $this->tg->sendMessage($chatId, "❌ AI tidak membaca item dari foto.\nPastikan struk terlihat jelas.");
+            return;
+        }
+
+        $this->processAiItems($chatId, $items, $session, $result['notes'] ?? '');
+    }
+
+    protected function processAiItems(string $chatId, array $items, TelegramSession $session, string $notes): void
+    {
+        $data = $session->data ?? [];
+        $existingItems = $data['items'] ?? [];
+        $errors = [];
+        $ambiguous = [];
+        $matchedItems = [];
+
+        foreach ($items as $item) {
+            $products = Product::where('is_active', true)
+                ->where(function ($q) use ($item) {
+                    $q->where('name', 'like', "%{$item['name']}%")
+                      ->orWhere('code', 'like', "%{$item['name']}%");
+                })
+                ->with('stock')
+                ->limit(5)
+                ->get();
+
+            if ($products->isEmpty()) {
+                $errors[] = "\"{$item['name']}\" tidak ditemukan di database";
+                continue;
+            }
+
+            if ($products->count() > 1) {
+                $ambiguous[] = [
+                    'input_name' => $item['name'],
+                    'products' => $products,
+                    'qty' => $item['qty'],
+                    'harga' => $item['price'],
+                ];
+                continue;
+            }
+
+            $product = $products->first();
+            $stock = $product->stock?->available_stock ?? 0;
+
+            if ($item['qty'] > $stock) {
+                $errors[] = "\"{$product->name}\" stok hanya {$stock}, minta {$item['qty']}";
+                continue;
+            }
+
+            $hargaClosing = $item['price'] > 0 ? $item['price'] : (float) $product->default_sale_price;
+
+            $matchedItems[] = [
+                'product_id' => $product->id,
+                'code' => $product->code,
+                'name' => $product->name,
+                'qty' => $item['qty'],
+                'unit_price' => $hargaClosing,
+                'cost_price' => (float) ($product->last_buy_price ?? 0),
+                'subtotal' => $item['qty'] * $hargaClosing,
+                'normal_price' => (float) $product->default_sale_price,
+                'ai_input' => $item['name'],
+            ];
+        }
+
+        $data['items'] = array_merge($existingItems, $matchedItems);
+        if ($notes) {
+            $data['ai_notes'] = ($data['ai_notes'] ?? '') . ' ' . $notes;
+        }
+        $session->update(['data' => $data]);
+
+        if (!empty($errors)) {
+            $this->tg->sendMessage($chatId, "⚠️ <b>Perhatian:</b>\n" . implode("\n", $errors) . "\n\nItem lain sudah ditambahkan. Ketik <code>SELESAI</code> untuk preview.");
+        }
+
+        if (!empty($ambiguous)) {
+            $amb = $ambiguous[0];
+            $data['pending_ambiguous'] = [
+                'qty' => $amb['qty'],
+                'harga' => $amb['harga'],
+                'source' => 'ai',
+            ];
+            $session->update(['state' => 'so_bulk_ambiguous', 'data' => $data]);
+
+            $text = "❓ \"<b>{$amb['input_name']}</b>\" ditemukan {$amb['products']->count()} produk:\n\nPilih yang benar:";
+            $keyboard = [];
+            foreach ($amb['products'] as $p) {
+                $hargaNormal = number_format($p->default_sale_price, 0, ',', '.');
+                $keyboard[] = [['text' => "{$p->name} (Rp {$hargaNormal})", 'callback_data' => 'so_product_select|' . $p->id]];
+            }
+
+            $this->tg->sendMessage($chatId, $text, ['inline_keyboard' => $keyboard]);
+            return;
+        }
+
+        $aiPreview = "🤖 <b>AI MENDETEKSI:</b>\n";
+        foreach ($matchedItems as $i => $item) {
+            $aiPreview .= ($i + 1) . ". <b>{$item['name']}</b> x{$item['qty']} @ Rp " . number_format($item['unit_price'], 0, ',', '.') . "\n";
+        }
+        if ($notes) {
+            $aiPreview .= "\n📝 Catatan: <i>{$notes}</i>\n";
+        }
+        $aiPreview .= "\nKirim pesanan lain, foto struk, atau ketik <code>SELESAI</code> untuk preview.";
+
+        $this->tg->sendMessage($chatId, $aiPreview);
+    }
+
+    protected function handleSoBulkAmbiguous(string $chatId, string $text, TelegramSession $session): void
+    {
+        $this->tg->sendMessage($chatId, "Silakan pilih produk dari tombol di atas, atau ketik <code>SELESAI</code> untuk lewati.");
+    }
+
+    protected function processRemainingInput(string $chatId, string $remaining, TelegramSession $session): void
+    {
+        $this->handleSoAiInput($chatId, $remaining, $session);
+    }
+
+    protected function showSoPreview(string $chatId, TelegramSession $session): void
+    {
+        $data = $session->data ?? [];
+        $items = $data['items'] ?? [];
+        $customerName = $data['customer_name'] ?? 'Unknown';
+
+        if (empty($items)) {
+            $this->tg->sendMessage($chatId, "❌ Belum ada item. Kirim pesanan dulu:");
+            return;
+        }
+
+        $text = "📋 <b>PREVIEW SALES ORDER</b>\n";
+        $text .= "Customer: <b>{$customerName}</b>\n";
+        $text .= "━━━━━━━━━━━━━━\n";
+
+        $totalQty = 0;
+        $totalNormal = 0;
+        $totalClosing = 0;
+        $totalDiskon = 0;
+
+        foreach ($items as $i => $item) {
+            $totalQty += $item['qty'];
+            $normalSubtotal = $item['normal_price'] * $item['qty'];
+            $closingSubtotal = $item['subtotal'];
+            $diskon = $normalSubtotal - $closingSubtotal;
+
+            $totalNormal += $normalSubtotal;
+            $totalClosing += $closingSubtotal;
+            $totalDiskon += $diskon;
+
+            $text .= ($i + 1) . ". <b>{$item['name']}</b> <code>{$item['code']}</code>\n";
+            $text .= "   Qty: {$item['qty']} | Normal: Rp " . number_format($item['normal_price'], 0, ',', '.') . "\n";
+            $text .= "   Closing: Rp " . number_format($item['unit_price'], 0, ',', '.') . " | Subtotal: Rp " . number_format($closingSubtotal, 0, ',', '.') . "\n";
+            if ($diskon > 0) {
+                $text .= "   💰 Diskon: Rp " . number_format($diskon, 0, ',', '.') . "\n";
+            }
+            $text .= "\n";
+        }
+
+        $text .= "━━━━━━━━━━━━━━\n";
+        $text .= "Total Qty: <b>{$totalQty}</b>\n";
+        $text .= "Total Normal: Rp " . number_format($totalNormal, 0, ',', '.') . "\n";
+        $text .= "Total Diskon: Rp " . number_format($totalDiskon, 0, ',', '.') . "\n";
+        $text .= "💰 <b>TOTAL SETELAH DISKON: Rp " . number_format($totalClosing, 0, ',', '.') . "</b>\n\n";
+        $text .= "Simpan SO?";
+
+        $this->tg->sendMessage($chatId, $text, [
+            'inline_keyboard' => [
+                [
+                    ['text' => '✅ SIMPAN SO', 'callback_data' => 'so_save|yes'],
+                    ['text' => '🔄 ULANGI', 'callback_data' => 'so_retry|yes'],
+                ],
+                [
+                    ['text' => '➕ TAMBAH ITEM', 'callback_data' => 'so_addmore|yes'],
+                ],
+            ]
+        ]);
+    }
+
+    protected function processSo(string $chatId, TelegramSession $session): void
+    {
+        $data = $session->data ?? [];
+        $items = $data['items'] ?? [];
+        $customerId = $data['customer_id'] ?? null;
+        $userId = $session->user_id;
+
+        if (empty($items) || !$customerId) {
+            $this->tg->sendMessage($chatId, "❌ Data SO tidak lengkap. Ketik /so untuk ulang.");
+            return;
+        }
+
+        DB::beginTransaction();
+        try {
+            $totalQty = collect($items)->sum('qty');
+            $totalAmount = collect($items)->sum('subtotal');
+            $totalCost = collect($items)->sum(fn($i) => $i['cost_price'] * $i['qty']);
+            $totalDiskon = collect($items)->sum(fn($i) => ($i['normal_price'] - $i['unit_price']) * $i['qty']);
+
+            $so = SalesOrder::create([
+                'so_number' => 'SO-TG-' . date('Ymd') . '-' . rand(1000, 9999),
+                'customer_id' => $customerId,
+                'date' => now()->toDateString(),
+                'status' => 'OPEN',
+                'total_qty' => $totalQty,
+                'total_amount' => $totalAmount,
+                'total_cost' => $totalCost,
+                'profit' => $totalAmount - $totalCost,
+                'discount' => $totalDiskon,
+                'notes' => 'Created via Telegram',
+                'created_by' => $userId,
+            ]);
+
+            foreach ($items as $item) {
+                SalesOrderDetail::create([
+                    'so_id' => $so->id,
+                    'product_id' => $item['product_id'],
+                    'qty' => $item['qty'],
+                    'unit_price' => $item['unit_price'],
+                    'cost_price' => $item['cost_price'],
+                    'subtotal' => $item['subtotal'],
+                    'profit' => ($item['unit_price'] - $item['cost_price']) * $item['qty'],
+                ]);
+            }
+
+            DB::commit();
+
+            $this->tg->sendMessage($chatId, "✅ <b>Sales Order berhasil dibuat!</b>\n\nNo: <code>{$so->so_number}</code>\nCustomer: {$data['customer_name']}\nTotal: Rp " . number_format($so->total_amount, 0, ',', '.') . "\nDiskon: Rp " . number_format($totalDiskon, 0, ',', '.') . "\nQty: {$so->total_qty}\n\nSO sudah masuk ke sistem ERP.");
+            $session->update(['state' => 'idle', 'data' => null]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('SO error: ' . $e->getMessage());
+            $this->tg->sendMessage($chatId, "❌ Gagal simpan SO: " . $e->getMessage());
+        }
+    }
+
+    protected function formatCart(array $cart): string
+    {
+        $text = "🛒 <b>KERANJANG</b>\n";
+        foreach ($cart as $i => $item) {
+            $sub = number_format($item['subtotal'], 0, ',', '.');
+            $text .= ($i + 1) . ". {$item['name']}\n   {$item['qty']} x Rp " . number_format($item['price'], 0, ',', '.') . " = Rp {$sub}\n";
+        }
+        return $text;
+    }
+
+    protected function handleAuthEmail(string $chatId, string $text, TelegramSession $session): void
+    {
+        $user = User::where('email', $text)->first();
+        if (!$user) {
+            $this->tg->sendMessage($chatId, "❌ Email tidak ditemukan.\nCoba lagi:");
+            return;
+        }
+        $session->update(['state' => 'awaiting_password', 'data' => ['email' => $text]]);
+        $this->tg->sendMessage($chatId, "🔐 Masukkan password Anda:");
+    }
+
+    protected function handleAuthPassword(string $chatId, string $text, TelegramSession $session): void
+    {
+        $email = $session->data['email'] ?? null;
+        $user = User::where('email', $email)->first();
+        if (!$user || !\Hash::check($text, $user->password)) {
+            $this->tg->sendMessage($chatId, "❌ Password salah.\nKetik /start untuk ulang.");
+            $session->update(['state' => 'idle']);
+            return;
+        }
+        $user->update(['telegram_chat_id' => $chatId]);
+        $session->update(['user_id' => $user->id, 'state' => 'idle', 'data' => null]);
+        $this->tg->sendMessage($chatId, "✅ Login berhasil!\nSelamat datang <b>{$user->name}</b>.\n\nKetik /menu untuk melihat menu.");
+    }
+}

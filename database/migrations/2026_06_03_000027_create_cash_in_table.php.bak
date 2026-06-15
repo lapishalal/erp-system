@@ -1,0 +1,32 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('cash_in', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('account_id')->constrained('accounts')->onDelete('cascade');
+            $table->date('date');
+            $table->enum('type', ['CUSTOMER_PAYMENT', 'OTHER_INCOME']);
+            $table->string('reference_type')->nullable();
+            $table->unsignedBigInteger('reference_id')->nullable();
+            $table->foreignId('customer_id')->nullable()->constrained('customers')->onDelete('set null');
+            $table->decimal('amount', 15, 2);
+            $table->text('description')->nullable();
+            $table->foreignId('created_by')->nullable()->constrained('users')->onDelete('set null');
+            $table->timestamps();
+
+            $table->index(['reference_type', 'reference_id']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('cash_in');
+    }
+};

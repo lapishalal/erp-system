@@ -1,0 +1,107 @@
+<?php
+
+$baseUrl = 'http://127.0.0.1:8000/api';
+
+echo "=== TEST API ERP SYSTEM ===\n\n";
+
+// 1. LOGIN
+echo "1. LOGIN\n";
+$loginData = json_encode([
+    'email' => 'admin@demo.com',
+    'password' => 'password',
+    'device_name' => 'flutter_test'
+]);
+
+$ch = curl_init("{$baseUrl}/login");
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, $loginData);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+$response = curl_exec($ch);
+curl_close($ch);
+
+$loginResult = json_decode($response, true);
+echo $response . "\n\n";
+
+if (!isset($loginResult['token'])) {
+    echo "LOGIN FAILED!\n";
+    exit;
+}
+
+$token = $loginResult['token'];
+echo "Token: " . substr($token, 0, 50) . "...\n\n";
+
+// Helper function
+function apiGet($url, $token) {
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer {$token}", "Content-Type: application/json"]);
+    $response = curl_exec($ch);
+    curl_close($ch);
+    return $response;
+}
+
+function apiPost($url, $token, $data) {
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer {$token}", "Content-Type: application/json"]);
+    $response = curl_exec($ch);
+    curl_close($ch);
+    return $response;
+}
+
+// 2. GET USER
+echo "2. GET USER\n";
+echo apiGet("{$baseUrl}/user", $token) . "\n\n";
+
+// 3. DASHBOARD SUMMARY
+echo "3. DASHBOARD SUMMARY\n";
+echo apiGet("{$baseUrl}/dashboard", $token) . "\n\n";
+
+// 4. LIST PRODUCTS
+echo "4. LIST PRODUCTS\n";
+echo apiGet("{$baseUrl}/products", $token) . "\n\n";
+
+// 5. LIST CUSTOMERS
+echo "5. LIST CUSTOMERS\n";
+echo apiGet("{$baseUrl}/customers", $token) . "\n\n";
+
+// 6. LIST BRANDS
+echo "6. LIST BRANDS\n";
+echo apiGet("{$baseUrl}/brands", $token) . "\n\n";
+
+// 7. LIST SALES ORDERS
+echo "7. LIST SALES ORDERS\n";
+echo apiGet("{$baseUrl}/sales-orders", $token) . "\n\n";
+
+// 8. CREATE SALES ORDER
+echo "8. CREATE SALES ORDER\n";
+$soData = [
+    'customer_id' => 1,
+    'date' => date('Y-m-d'),
+    'notes' => 'Test dari API',
+    'items' => [
+        [
+            'product_id' => 1,
+            'qty' => 5,
+            'unit_price' => 100000
+        ]
+    ]
+];
+echo apiPost("{$baseUrl}/sales-orders", $token, $soData) . "\n\n";
+
+// 9. LIST STOCK
+echo "9. LIST STOCK\n";
+echo apiGet("{$baseUrl}/stock", $token) . "\n\n";
+
+// 10. CASH IN
+echo "10. LIST CASH IN\n";
+echo apiGet("{$baseUrl}/cash-in", $token) . "\n\n";
+
+// 11. CASH OUT
+echo "11. LIST CASH OUT\n";
+echo apiGet("{$baseUrl}/cash-out", $token) . "\n\n";
+
+echo "=== TEST COMPLETE ===\n";

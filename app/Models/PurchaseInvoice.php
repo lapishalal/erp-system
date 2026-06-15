@@ -1,0 +1,54 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Traits\Auditable;
+
+class PurchaseInvoice extends Model
+{
+    use HasFactory, Auditable;
+
+    protected $fillable = [
+        'invoice_number',
+        'supplier_id',
+        'gr_id',
+        'date',
+        'due_date',
+        'total',
+        'paid_amount',
+        'status',
+        'notes',
+        'created_by',
+    ];
+
+    protected $casts = [
+        'date' => 'date',
+        'due_date' => 'date',
+        'total' => 'decimal:2',
+        'paid_amount' => 'decimal:2',
+    ];
+
+    public function supplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class);
+    }
+
+    public function goodsReceipt(): BelongsTo
+    {
+        return $this->belongsTo(GoodsReceipt::class, 'gr_id');
+    }
+
+    public function details(): HasMany
+    {
+        return $this->hasMany(PurchaseInvoiceDetail::class, 'invoice_id');
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+}

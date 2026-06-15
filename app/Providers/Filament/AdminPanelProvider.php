@@ -1,0 +1,121 @@
+<?php
+
+namespace App\Providers\Filament;
+
+use Filament\Http\Middleware\Authenticate;
+use Filament\Http\Middleware\DisableBladeIconComponents;
+use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\MenuItem;
+use Filament\Navigation\NavigationGroup;
+use Filament\Pages;
+use Filament\Panel;
+use Filament\PanelProvider;
+use Filament\Support\Colors\Color;
+use Filament\Widgets;
+
+class AdminPanelProvider extends PanelProvider
+{
+    public function panel(Panel $panel): Panel
+    {
+        return $panel
+            ->default()
+            ->id('admin')
+            ->path('admin')
+            ->login()
+            ->colors([
+                'primary' => Color::Blue,
+            ])
+            ->resources([
+                \App\Filament\Resources\BrandResource::class,
+                \App\Filament\Resources\CategoryResource::class,
+                \App\Filament\Resources\ProductResource::class,
+                \App\Filament\Resources\CustomerResource::class,
+                \App\Filament\Resources\SupplierResource::class,
+                \App\Filament\Resources\WarehouseResource::class,
+                \App\Filament\Resources\UserResource::class,
+                \App\Filament\Resources\SalesOrderResource::class,
+                \App\Filament\Resources\DeliveryOrderResource::class,
+                \App\Filament\Resources\PurchaseOrderResource::class,
+                \App\Filament\Resources\GoodsReceiptResource::class,
+                \App\Filament\Resources\PurchaseReturnResource::class,
+                \App\Filament\Resources\CashInResource::class,
+                \App\Filament\Resources\CashOutResource::class,
+                \App\Filament\Resources\ExpenseCategoryResource::class,
+                \App\Filament\Resources\StockOpnameResource::class,
+                \App\Filament\Resources\SalesInvoiceResource::class,
+                \App\Filament\Resources\ProductStockResource::class,
+                \App\Filament\Resources\SalesReportResource::class,
+                \App\Filament\Resources\StockReportResource::class,
+                \App\Filament\Resources\ProfitLossResource::class,
+                \App\Filament\Resources\BalanceSheetResource::class,
+                \App\Filament\Resources\AccountResource::class,
+                \App\Filament\Resources\JournalEntryResource::class,
+                \App\Filament\Resources\PurchaseInvoiceResource::class,
+				\App\Filament\Resources\PosTransactionResource::class,
+				\App\Filament\Resources\AuditLogResource::class,
+				\App\Filament\Resources\EmployeeResource::class,
+				\App\Filament\Resources\PayrollPeriodResource::class,
+				\App\Filament\Resources\PayrollResource::class,
+				\App\Filament\Resources\EmployeeLoanResource::class,
+				\App\Filament\Resources\PayrollResource::class,
+            ])
+            ->pages([
+                Pages\Dashboard::class,
+                \App\Filament\Pages\CashFlowReport::class,
+				\App\Filament\Pages\PosPage::class,
+            ])
+            ->widgets([
+                \App\Filament\Widgets\DashboardStats::class,
+                \App\Filament\Widgets\TopCustomersTable::class,
+                \App\Filament\Widgets\TopBrandsTable::class,
+                \App\Filament\Widgets\TopProductsTable::class,
+                \App\Filament\Widgets\LowStockTable::class,
+            ])
+            ->navigationGroups([
+                NavigationGroup::make('Master Data')
+                    ->collapsible()
+                    ->collapsed(),
+                NavigationGroup::make('Transaksi Penjualan')
+                    ->collapsible()
+                    ->collapsed(),
+                NavigationGroup::make('Transaksi Pembelian')
+                    ->collapsible()
+                    ->collapsed(),
+                NavigationGroup::make('Keuangan')
+                    ->collapsible()
+                    ->collapsed(),
+				NavigationGroup::make('Payroll')
+					->collapsible()
+					->collapsed(),
+                NavigationGroup::make('Inventory')
+                    ->collapsible()
+                    ->collapsed(),
+				NavigationGroup::make('System')
+					->collapsible()
+					->collapsed(),
+                NavigationGroup::make('Laporan')
+                    ->collapsible()
+                    ->collapsed(),
+            ])
+            ->userMenuItems([
+                MenuItem::make()
+                    ->label('Profil Saya')
+                    ->url(fn (): string => \App\Filament\Resources\UserResource::getUrl('edit', ['record' => auth()->id()]))
+                    ->icon('heroicon-o-user-circle'),
+            ])
+            ->middleware([
+                \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+                \Illuminate\Cookie\Middleware\EncryptCookies::class,
+                \Illuminate\Session\Middleware\StartSession::class,
+                \Illuminate\Session\Middleware\AuthenticateSession::class,
+                \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+                \Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class,
+                \Illuminate\Routing\Middleware\SubstituteBindings::class,
+                DisableBladeIconComponents::class,
+                DispatchServingFilamentEvent::class,
+            ])
+            ->authMiddleware([
+                Authenticate::class,
+            ]);
+    }
+}

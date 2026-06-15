@@ -1,0 +1,51 @@
+<?php
+
+namespace Database\Seeders;
+
+use Illuminate\Database\Seeder;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\Models\Permission;
+
+class PermissionSeeder extends Seeder
+{
+    public function run(): void
+    {
+        $permissions = [
+            'view_dashboard',
+            'view_reports',
+            'manage_master_data',
+            'manage_products',
+            'manage_customers',
+            'manage_suppliers',
+            'manage_sales_orders',
+            'manage_delivery_orders',
+            'manage_purchase_orders',
+            'manage_goods_receipts',
+            'manage_inventory',
+            'manage_stock_opname',
+            'manage_cash_in',
+            'manage_cash_out',
+            'manage_expenses',
+            'manage_accounting',
+            'manage_users',
+            'manage_settings',
+        ];
+
+        foreach ($permissions as $permission) {
+            Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
+        }
+
+        $roles = [
+            'Admin' => $permissions,
+            'Sales' => ['view_dashboard', 'manage_sales_orders', 'manage_customers'],
+            'Gudang' => ['view_dashboard', 'manage_delivery_orders', 'manage_inventory', 'manage_stock_opname'],
+            'Finance' => ['view_dashboard', 'manage_purchase_orders', 'manage_goods_receipts', 'manage_cash_in', 'manage_cash_out', 'manage_expenses', 'manage_accounting'],
+            'Owner' => ['view_dashboard', 'view_reports', 'manage_settings'],
+        ];
+
+        foreach ($roles as $roleName => $rolePermissions) {
+            $role = Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
+            $role->syncPermissions($rolePermissions);
+        }
+    }
+}

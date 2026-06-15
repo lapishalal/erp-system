@@ -1,0 +1,196 @@
+<?php
+
+namespace App\Filament\Resources;
+
+use App\Filament\Resources\UserResource\Pages;
+use App\Models\User;
+use Filament\Forms;
+use Filament\Forms\Form;
+use Filament\Resources\Resource;
+use Filament\Tables;
+use Filament\Tables\Table;
+use Illuminate\Support\Facades\Hash;
+
+class UserResource extends Resource
+{
+    protected static ?string $model = User::class;
+    protected static ?string $navigationIcon = 'heroicon-o-users';
+    protected static ?string $navigationGroup = 'Master Data';
+    protected static ?string $navigationLabel = 'User & Hak Akses';
+    protected static ?string $modelLabel = 'User';
+    protected static ?string $pluralModelLabel = 'User';
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()->hasRole('Admin') || auth()->user()->hasPermissionTo('manage_users');
+    }
+	
+    public static function form(Form $form): Form
+    {
+        return $form
+            ->schema([
+                Forms\Components\Section::make('Informasi User')
+                    ->schema([
+                        Forms\Components\TextInput::make('name')
+                            ->label('Nama Lengkap')
+                            ->required()
+                            ->maxLength(255),
+
+                        Forms\Components\TextInput::make('email')
+                            ->label('Email')
+                            ->email()
+                            ->required()
+                            ->unique(ignoreRecord: true)
+                            ->maxLength(255),
+
+                        Forms\Components\TextInput::make('password')
+                            ->label('Password')
+                            ->password()
+                            ->required(fn (string $context): bool => $context === 'create')
+                            ->dehydrated(fn ($state) => filled($state))
+                            ->dehydrateStateUsing(fn ($state) => Hash::make($state))
+                            ->revealable()
+                            ->helperText(fn (string $context): string => $context === 'edit' ? 'Kosongkan jika tidak ingin mengubah password' : ''),
+
+                        Forms\Components\TextInput::make('phone')
+                            ->label('Telepon / WA')
+                            ->tel()
+                            ->maxLength(50),
+							
+						Forms\Components\TextInput::make('telegram_chat_id')
+							->label('Telegram Chat ID')
+							->placeholder('Diisi otomatis oleh bot')
+							->disabled()
+							->dehydrated(false)
+							->columnSpan(1),
+						
+						Forms\Components\Toggle::make('telegram_notifications')
+							->label('Notifikasi Telegram')
+							->default(false),
+
+                        Forms\Components\FileUpload::make('avatar')
+                            ->label('Foto Profil')
+                            ->image()
+                            ->directory('avatars')
+                            ->maxSize(2048)
+                            ->columnSpanFull(),
+
+                        Forms\Components\Toggle::make('is_active')
+                            ->label('Status Aktif')
+                            ->default(true),
+                    ])->columns(2),
+
+                    Forms\Components\Section::make('Hak Akses — Centang Fitur yang Diizinkan')
+                    ->description('Admin bebas menentukan fitur apa saja yang bisa diakses oleh user ini')
+                    ->visible(fn (?User $record): bool => auth()->user()->hasRole('Admin') || auth()->id() !== $record?->id)
+                    ->schema([
+                        Forms\Components\CheckboxList::make('permissions')
+                            ->label(false)
+                            ->relationship('permissions', 'name')
+                            ->options(function () {
+                                return \Spatie\Permission\Models\Permission::all()
+                                    ->mapWithKeys(function ($permission) {
+                                        $label = match ($permission->name) {
+                                            'view_dashboard' => '📊 Dashboard',
+                                            'view_sales_report' => '📈 Laporan Penjualan',
+                                            'view_stock_report' => '📦 Laporan Stok',
+                                            'view_financial_report' => '💰 Laporan Keuangan',
+                                            'view_profit_loss' => '📉 Profit & Loss',
+                                            'view_balance_sheet' => '📋 Neraca',
+                                            'view_cash_flow' => '💸 Cash Flow',
+                                            'manage_master_data' => '🏷️ Master Data (Brand/Kategori/Gudang)',
+                                            'manage_products' => '📦 Barang',
+                                            'manage_customers' => '👥 Customer',
+                                            'manage_suppliers' => '🚚 Supplier',
+                                            'manage_sales_orders' => '📝 Sales Order',
+                                            'manage_delivery_orders' => '🚚 Surat Jalan',
+                                            'manage_sales_invoices' => '🧾 Faktur Penjualan',
+                                            'manage_purchase_orders' => '🛒 Purchase Order',
+                                            'manage_goods_receipts' => '📥 Stok Masuk / GR',
+                                            'manage_purchase_returns' => '↩️ Retur Pembelian',
+                                            'manage_inventory' => '🏭 Inventory / Cek Stok',
+                                            'manage_stock_opname' => '🔍 Stock Opname',
+                                            'manage_cash_in' => '💵 Kas Masuk',
+                                            'manage_cash_out' => '💸 Pengeluaran / Kas Keluar',
+                                            'manage_expenses' => '🏷️ Kategori Expense',
+                                            'manage_accounting' => '📚 Jurnal & Buku Besar',
+                                            'manage_users' => '👤 User & Hak Akses',
+                                            'manage_settings' => '⚙️ Pengaturan',
+											'manage_pos' => '🛒 POS / Kasir',
+											'manage_payroll' => '💼 Payroll / Gaji Karyawan',
+                                            default => $permission->name,
+                                        };
+                                        return [$permission->id => $label];
+                                    });
+                            })
+                            ->searchable()
+                            ->bulkToggleable()
+                            ->columns(2)
+                            ->gridDirection('row'),
+                    ]),
+            ]);
+    }
+
+    public static function table(Table $table): Table
+    {
+        return $table
+            ->columns([
+                Tables\Columns\ImageColumn::make('avatar')
+                    ->label('Foto')
+                    ->circular()
+                    ->defaultImageUrl(fn (User $record): string => 'https://ui-avatars.com/api/?name=' . urlencode($record->name) . '&background=0D8ABC&color=fff'),
+                
+                Tables\Columns\TextColumn::make('name')
+                    ->searchable()
+                    ->sortable(),
+                
+                Tables\Columns\TextColumn::make('email')
+                    ->searchable(),
+                
+                Tables\Columns\TextColumn::make('phone')
+                    ->placeholder('-'),
+					
+				Tables\Columns\TextColumn::make('telegram_chat_id')
+					->label('Telegram')
+					->placeholder('Belum terhubung')
+					->copyable()
+					->searchable(),
+                
+                Tables\Columns\TextColumn::make('roles')
+                    ->label('Role')
+                    ->formatStateUsing(fn (User $record): string => $record->roles->pluck('name')->join(', '))
+                    ->placeholder('-'),
+                
+                Tables\Columns\IconColumn::make('is_active')
+                    ->label('Aktif')
+                    ->boolean(),
+                
+                Tables\Columns\TextColumn::make('created_at')
+                    ->dateTime('d M Y')
+                    ->sortable(),
+            ])
+            ->filters([
+                Tables\Filters\TernaryFilter::make('is_active')
+                    ->label('Status Aktif'),
+            ])
+            ->actions([
+                Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn (User $record): bool => $record->id !== auth()->id()),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+                ]),
+            ]);
+    }
+
+    public static function getPages(): array
+    {
+        return [
+            'index' => Pages\ListUsers::route('/'),
+            'create' => Pages\CreateUser::route('/create'),
+            'edit' => Pages\EditUser::route('/{record}/edit'),
+        ];
+    }
+}

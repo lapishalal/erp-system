@@ -1,0 +1,44 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class GoodsReceiptDetail extends Model
+{
+    use HasFactory;
+
+    protected $table = 'goods_receipt_details';
+
+    protected $fillable = [
+        'gr_id',
+        'product_id',
+        'qty',
+        'buy_price',
+        'subtotal',
+    ];
+
+    protected $attributes = [
+        'qty' => 0,
+        'buy_price' => 0,
+        'subtotal' => 0,
+    ];
+
+    protected $casts = [
+        'qty' => 'integer',
+        'buy_price' => 'decimal:2',
+        'subtotal' => 'decimal:2',
+    ];
+
+    public function goodsReceipt(): BelongsTo
+    {
+        return $this->belongsTo(GoodsReceipt::class, 'gr_id');
+    }
+
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
+    }
+}

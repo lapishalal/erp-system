@@ -1,0 +1,49 @@
+<?php
+namespace App\Filament\Resources\PayrollResource\Pages;
+use App\Filament\Resources\PayrollResource;
+use Filament\Infolists\Components\Section;
+use Filament\Infolists\Components\TextEntry;
+use Filament\Infolists\Infolist;
+use Filament\Resources\Pages\ViewRecord;
+class ViewPayroll extends ViewRecord
+{
+    protected static string $resource = PayrollResource::class;
+
+    public function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Section::make('Informasi Karyawan')
+                    ->columns(2)
+                    ->schema([
+                        TextEntry::make('employee.name')->label('Nama'),
+                        TextEntry::make('employee.nik')->label('NIK'),
+                        TextEntry::make('employee.position')->label('Jabatan'),
+                        TextEntry::make('payrollPeriod.period_name')->label('Periode'),
+                        TextEntry::make('payroll_number')->label('No. Slip'),
+                        TextEntry::make('status')->label('Status'),
+                    ]),
+                Section::make('Penghasilan')
+                    ->schema([
+                        TextEntry::make('basic_salary')->label('Gaji Pokok')->money('IDR'),
+                        TextEntry::make('total_allowances')->label('Total Tunjangan')->money('IDR'),
+                        TextEntry::make('total_earnings')->label('Total Penghasilan')->money('IDR')->weight('bold'),
+                    ]),
+                Section::make('BPJS')
+                    ->schema([
+                        TextEntry::make('bpjs_kesehatan_company')->label('BPJS Kesehatan (Perusahaan)')->money('IDR'),
+                        TextEntry::make('bpjs_ketenagakerjaan_company')->label('BPJS Ketenagakerjaan (Perusahaan)')->money('IDR'),
+                        TextEntry::make('total_bpjs_company')->label('Total BPJS Perusahaan')->money('IDR')->weight('bold'),
+                        TextEntry::make('bpjs_kesehatan_employee')->label('BPJS Kesehatan (Karyawan)')->money('IDR'),
+                        TextEntry::make('bpjs_ketenagakerjaan_employee')->label('BPJS Ketenagakerjaan (Karyawan)')->money('IDR'),
+                        TextEntry::make('total_bpjs_employee')->label('Total BPJS Karyawan')->money('IDR')->weight('bold'),
+                    ]),
+                Section::make('Ringkasan')
+                    ->schema([
+                        TextEntry::make('gross_salary')->label('Gross Salary (Beban Perusahaan)')->money('IDR'),
+                        TextEntry::make('total_deductions')->label('Total Potongan')->money('IDR')->color('danger'),
+                        TextEntry::make('net_salary')->label('Gaji Bersih (Diterima)')->money('IDR')->weight('bold')->size(TextEntry\TextEntrySize::Large),
+                    ]),
+            ]);
+    }
+}
