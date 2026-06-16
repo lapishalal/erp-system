@@ -1,59 +1,303 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# ERP System
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Sistem ERP (Enterprise Resource Planning) berbasis web yang dibangun dengan **Laravel 11** dan **Filament 3**. Sistem ini mencakup modul Penjualan, Pembelian, Inventory, Akuntansi, HR/Payroll, POS, dan API Mobile dengan arsitektur multi-tenant.
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## 📋 Tech Stack
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+| Komponen | Teknologi |
+|----------|-----------|
+| **Framework** | Laravel 11 (PHP 8.2+) |
+| **Admin Panel** | Filament 3.2 |
+| **Multi-Tenant** | `stancl/tenancy` |
+| **RBAC** | `spatie/laravel-permission` |
+| **PDF** | `barryvdh/laravel-dompdf` |
+| **Excel** | `maatwebsite/excel` |
+| **API Auth** | `laravel/sanctum` |
+| **Database** | MySQL / MariaDB |
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+---
 
-## Learning Laravel
+## 🚀 Fitur Utama
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+### 1. Master Data
+- **Brand** — Manajemen merek produk
+- **Category** — Kategori produk hierarkis
+- **Product** — Produk dengan SKU, harga jual, harga beli terakhir, stok minimum, status aktif
+- **Customer** — Pelanggan dengan limit kredit & NPWP
+- **Supplier** — Pemasok
+- **Warehouse** — Multi-gudang
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+### 2. Inventory / Stok
+- **Product Stock** — Stok real-time per gudang (physical, available, outstanding)
+- **Stock Transaction** — Riwayat pergerakan stok lengkap (IN, OUT, ADJUSTMENT, TRANSFER)
+- **Stock Opname** — Penyesuaian stok fisik dengan otomatis hitung selisih
+- **Goods Receipt** — Penerimaan barang dari PO dengan auto-load detail barang
+- **Purchase Return** — Retur pembelian
 
-## Laravel Sponsors
+### 3. Sales (Penjualan)
+- **Sales Order** — Pesanan penjualan dengan approval flow
+- **Delivery Order** — Surat jalan otomatis dari SO
+- **Sales Invoice** — Faktur penjualan dari DO
+- **POS (Point of Sale)** — Transaksi kasir dengan print struk thermal
+- **Sales Report** — Filter by date, customer, status, brand, product → Export Excel
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+### 4. Purchase (Pembelian)
+- **Purchase Order** — Pesanan pembelian dengan tracking sisa qty
+- **Goods Receipt (GR)** — Penerimaan barang dengan fitur:
+  - Auto-load barang dari PO (tidak perlu input manual)
+  - Harga beli & barang di-lock (tidak bisa beda dengan PO)
+  - Edit qty terima saja
+  - Otomatis masuk stok ke gudang saat status = RECEIVED
+- **Purchase Invoice** — Faktur pembelian dari GR
+- **Purchase Return** — Retur pembelian
 
-### Premium Partners
+### 5. Accounting (Akuntansi)
+- **Chart of Accounts** — Kode akun hierarkis (Aset, Kewajiban, Modal, Pendapatan, Beban)
+- **Journal Entry** — Jurnal umum double entry
+- **Cash In** — Penerimaan kas (terhubung ke invoice)
+- **Cash Out** — Pengeluaran kas
+- **Expense Category** — Kategori pengeluaran
+- **Auto Journal** — Jurnal otomatis saat:
+  - GR diterima (Persediaan ↑ vs Hutang ↑)
+  - Sales Invoice dibuat (Piutang ↑ vs Penjualan ↑)
+  - Cash In/Out
+- **Profit & Loss** — Laporan laba rugi
+- **Balance Sheet** — Laporan neraca
+- **Cash Flow Report** — Arus kas
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+### 6. HR / Payroll
+- **Employee** — Data karyawan (gaji pokok, tunjangan, BPJS, PPh21, PTKP)
+- **Employee Loan** — Pinjaman karyawan
+- **Payroll Period** — Periode penggajian
+- **Payroll** — Slip gaji dengan kalkulasi otomatis:
+  - Gaji pokok + tunjangan
+  - Potongan BPJS karyawan & perusahaan
+  - PPh21
+  - Pinjaman karyawan
+  - Alpha (tidak masuk)
+- **Print Slip Gaji** — PDF
 
-## Contributing
+### 7. POS (Point of Sale)
+- Halaman POS khusus dengan UI Filament
+- Cari produk via API
+- Checkout otomatis kurangi stok
+- Print struk thermal
+- Riwayat transaksi dengan export Excel
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### 8. Reporting & Analytics
+- **Dashboard Widgets** — Stats overview, Low Stock, Top Brands, Top Customers, Top Products
+- **Sales Report** — Export Excel
+- **Stock Report** — Export Excel
+- **Financial Reports** — P&L, Balance Sheet, Cash Flow
 
-## Code of Conduct
+### 9. API Mobile / External
+| Endpoint | Fungsi |
+|----------|--------|
+| `POST /api/login` | Autentikasi Sanctum |
+| `GET /api/dashboard` | Ringkasan dashboard |
+| `GET /api/products` | Daftar produk |
+| `GET /api/customers` | Daftar pelanggan |
+| `GET /api/sales-orders` | Daftar SO |
+| `POST /api/sales-orders` | Buat SO |
+| `GET /api/inventory` | Stok barang |
+| `GET /api/reports/*` | Laporan via API |
+| `GET /api/exports/*` | Export via API |
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### 10. Telegram Bot Integration
+- Webhook & Polling mode
+- Flow interaktif untuk cek stok, buat SO, cek laporan
+- AI Parser untuk parsing pesan natural language
 
-## Security Vulnerabilities
+### 11. Multi-Tenant
+- Setiap tenant punya database terpisah
+- Subdomain-based tenancy
+- Auto seeding per tenant
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+### 12. Security & Audit
+- **RBAC** — Role-based access control (Spatie Permission)
+- **Audit Log** — Tracking create, update, delete pada semua model utama
+- **Auditable Trait** — Otomatis log perubahan
 
-## License
+---
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## 📁 Struktur Modul
+
+```
+app/
+├── Models/              # 30+ model (Product, Stock, Sales, Purchase, Accounting, HR)
+├── Filament/Resources/  # Filament CRUD resources
+├── Observers/           # Business logic (GoodsReceiptObserver, dll)
+├── Services/            # Reusable services (StockService, JournalService)
+├── Http/Controllers/    # API & Telegram controllers
+├── Providers/           # AppServiceProvider (observer registration)
+├── Traits/              # Auditable trait
+database/
+├── migrations/          # 35+ migration
+├── seeders/             # ChartOfAccountSeeder, TenantDatabaseSeeder
+```
+
+---
+
+## ⚙️ Instalasi
+
+### 1. Clone Repository
+```bash
+git clone https://github.com/lapishalal/erp-system.git
+cd erp-system
+```
+
+### 2. Install Dependencies
+```bash
+composer install
+npm install && npm run build
+```
+
+### 3. Environment Setup
+```bash
+cp .env.example .env
+php artisan key:generate
+```
+
+Edit `.env`:
+```env
+DB_DATABASE=erp_system
+DB_USERNAME=root
+DB_PASSWORD=your_password
+
+# Untuk multi-tenant (opsional)
+TENANCY_CENTRAL_DOMAINS=localhost,erp.local
+```
+
+### 4. Database & Migration
+```bash
+php artisan migrate
+```
+
+### 5. Seed Chart of Accounts (WAJIB untuk jurnal otomatis)
+```bash
+php artisan db:seed --class=ChartOfAccountSeeder
+```
+
+### 6. Seed Permissions & Roles
+```bash
+php artisan db:seed --class=PermissionSeeder
+```
+
+### 7. Create Admin User
+```bash
+php artisan tinker
+>>> App\Models\User::create(['name'=>'Admin','email'=>'admin@erp.com','password'=>bcrypt('password')])
+```
+
+### 8. Run
+```bash
+php artisan serve
+```
+
+Buka: `http://localhost/admin`
+
+---
+
+## 🏗️ Flow Bisnis
+
+### Purchase (Pembelian)
+```
+Purchase Order → Goods Receipt → Stok Masuk → Purchase Invoice
+     ↓                ↓               ↓              ↓
+  ORDERED      DRAFT/RECEIVED   ProductStock   Hutang Supplier
+```
+
+### Sales (Penjualan)
+```
+Sales Order → Delivery Order → Sales Invoice → Cash In
+    ↓              ↓                ↓              ↓
+ PENDING      SURAT JALAN      FAKTUR       PELUNASAN
+```
+
+### Inventory
+```
+Goods Receipt (IN)     → physical_stock ↑
+Sales Invoice/DO (OUT)  → physical_stock ↓
+Stock Opname            → adjustment
+```
+
+---
+
+## 🛠️ Perbaikan Terbaru
+
+### v1.1.0 - Fix Goods Receipt & Stok
+- ✅ **Fix input qty lag** — Hapus `live()` dari Repeater, input bebas tanpa kehapus
+- ✅ **Fix stok tidak masuk** — Register `GoodsReceiptObserver` di `AppServiceProvider`
+- ✅ **GR auto-load dari PO** — Pilih PO → barang & harga auto-load, user edit qty terima saja
+- ✅ **Fix total_qty NULL** — Hitung otomatis via model events (`saved`/`deleted`)
+- ✅ **Warehouse tracking** — Stok masuk ke gudang yang dipilih (bukan hardcoded ID 1)
+- ✅ **Auto Journal** — Jurnal otomatis saat GR diterima (Persediaan vs Hutang)
+- ✅ **Chart of Accounts Seeder** — Seed akun default untuk jurnal otomatis
+
+---
+
+## 📝 Catatan Penting
+
+### Chart of Accounts (Wajib di-seed)
+Akun yang harus ada untuk jurnal otomatis:
+
+| Kode | Nama | Tipe |
+|------|------|------|
+| 1-10001 | Kas | Aset |
+| 1-10003 | Piutang Dagang | Aset |
+| 1-20001 | Persediaan Barang Dagang | Aset |
+| 2-10001 | Hutang Dagang | Kewajiban |
+| 4-10001 | Penjualan | Pendapatan |
+| 4-20001 | Pendapatan Lain-lain | Pendapatan |
+| 5-10001 | HPP | Beban |
+| 5-20001 | Beban Operasional | Beban |
+
+Jalankan: `php artisan db:seed --class=ChartOfAccountSeeder`
+
+### Multi-Tenant Setup
+```bash
+# Buat tenant baru
+php artisan tenant:create --domain=tenant1.erp.local
+
+# Setup database tenant
+php artisan setup:tenant
+```
+
+---
+
+## 📄 Lisensi
+
+Open source untuk penggunaan pribadi dan komersial.
+
+---
+
+## 👤 Kontributor
+
+- **lapishalal** — Initial development & maintenance
+
+---
+
+## 🆘 Troubleshooting
+
+### Menu GR tidak muncul
+Pastikan `navigationGroup` di `GoodsReceiptResource` sama dengan resource lain di grup Pembelian:
+```php
+protected static ?string $navigationGroup = 'Transaksi Pembelian';
+```
+
+### Stok tidak masuk setelah GR RECEIVED
+1. Cek `AppServiceProvider` sudah register observer:
+   ```php
+   GoodsReceipt::observe(GoodsReceiptObserver::class);
+   ```
+2. Cek Chart of Accounts sudah di-seed
+3. Cek `storage/logs/laravel.log` untuk error exact
+
+### Input qty "1000" kehapus jadi "10"
+Pastikan tidak ada `->live()` di field `qty` dalam Repeater. Gunakan `->live(onBlur: true)` jika perlu.
+
+---
+
+*Dibuat dengan ❤️ menggunakan Laravel 11 + Filament 3*
