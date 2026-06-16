@@ -55,29 +55,16 @@ class JournalEntryResource extends Resource
                                     ->label('Debit')
                                     ->numeric()
                                     ->prefix('Rp')
-                                    ->default(0)
-                                    ->live(),
+                                    ->default(0),
 
                                 Forms\Components\TextInput::make('credit')
                                     ->label('Kredit')
                                     ->numeric()
                                     ->prefix('Rp')
-                                    ->default(0)
-                                    ->live(),
+                                    ->default(0),
                             ])
                             ->columns(3)
-                            ->addActionLabel('Tambah Baris')
-                            ->live()
-                            ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                $totalDebit = 0;
-                                $totalCredit = 0;
-                                foreach ($state ?? [] as $item) {
-                                    $totalDebit += $item['debit'] ?? 0;
-                                    $totalCredit += $item['credit'] ?? 0;
-                                }
-                                $set('total_debit', $totalDebit);
-                                $set('total_credit', $totalCredit);
-                            }),
+                            ->addActionLabel('Tambah Baris'),
                     ]),
 
                 Forms\Components\Section::make('Ringkasan')

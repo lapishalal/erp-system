@@ -63,6 +63,7 @@ class AdminPanelProvider extends PanelProvider
                 Pages\Dashboard::class,
                 \App\Filament\Pages\CashFlowReport::class,
 				\App\Filament\Pages\PosPage::class,
+				\App\Filament\Pages\LedgerReport::class,
             ])
             ->widgets([
                 \App\Filament\Widgets\DashboardStats::class,
