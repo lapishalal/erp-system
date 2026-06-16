@@ -10,8 +10,6 @@ class PurchaseOrderDetail extends Model
 {
     use HasFactory;
 
-    protected $table = 'purchase_order_details';
-
     protected $fillable = [
         'po_id',
         'product_id',
@@ -22,11 +20,6 @@ class PurchaseOrderDetail extends Model
         'subtotal',
     ];
 
-    protected $attributes = [
-        'received_qty' => 0,
-        'remaining_qty' => 0,
-    ];
-
     protected $casts = [
         'qty' => 'integer',
         'unit_price' => 'decimal:2',
@@ -34,6 +27,21 @@ class PurchaseOrderDetail extends Model
         'remaining_qty' => 'integer',
         'subtotal' => 'decimal:2',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $detail) {
+            if (empty($detail->remaining_qty) && $detail->qty > 0) {
+                $detail->remaining_qty = $detail->qty;
+            }
+            if (empty($detail->received_qty)) {
+                $detail->received_qty = 0;
+            }
+            if (empty($detail->subtotal)) {
+                $detail->subtotal = $detail->qty * $detail->unit_price;
+            }
+        });
+    }
 
     public function purchaseOrder(): BelongsTo
     {

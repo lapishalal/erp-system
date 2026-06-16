@@ -5,14 +5,24 @@ namespace App\Observers;
 use App\Models\GoodsReceipt;
 use App\Models\Product;
 use App\Models\ProductBuyPrice;
+use App\Models\PurchaseOrderDetail;
 use App\Services\JournalService;
 use App\Services\StockService;
 
 class GoodsReceiptObserver
 {
+    public function created(GoodsReceipt $goodsReceipt): void
+    {
+        if ($goodsReceipt->status === 'RECEIVED') {
+            $this->processReceipt($goodsReceipt);
+        }
+    }
+
     public function updated(GoodsReceipt $goodsReceipt): void
     {
-        if ($goodsReceipt->isDirty('status') && $goodsReceipt->status === 'RECEIVED' && $goodsReceipt->getOriginal('status') !== 'RECEIVED') {
+        if ($goodsReceipt->isDirty('status') 
+            && $goodsReceipt->status === 'RECEIVED' 
+            && $goodsReceipt->getOriginal('status') !== 'RECEIVED') {
             $this->processReceipt($goodsReceipt);
         }
     }
@@ -20,12 +30,18 @@ class GoodsReceiptObserver
     protected function processReceipt(GoodsReceipt $goodsReceipt): void
     {
         $totalAmount = 0;
+        $warehouseId = $goodsReceipt->warehouse_id ?? 1;
+
+        // Reload details untuk pastikan data terbaru
+        $goodsReceipt->load('details');
 
         foreach ($goodsReceipt->details as $detail) {
-            // Add stock
+            if ($detail->qty <= 0) continue;
+
+            // ✅ Add stock pakai qty (bukan subtotal)
             StockService::addStock(
                 $detail->product_id,
-                1, // Default warehouse
+                $warehouseId,
                 $detail->qty,
                 $detail->buy_price,
                 'IN',
@@ -47,14 +63,16 @@ class GoodsReceiptObserver
 
             // Update product last buy price
             $product = Product::find($detail->product_id);
-            $product->last_buy_price = $detail->buy_price;
-            $product->save();
+            if ($product) {
+                $product->last_buy_price = $detail->buy_price;
+                $product->save();
+            }
 
-            $totalAmount += ($detail->buy_price * $detail->qty);
+            $totalAmount += $detail->subtotal;
 
-            // Update PO detail received qty (if linked to PO)
+            // Update PO detail received qty
             if ($goodsReceipt->po_id) {
-                $poDetail = \App\Models\PurchaseOrderDetail::where('po_id', $goodsReceipt->po_id)
+                $poDetail = PurchaseOrderDetail::where('po_id', $goodsReceipt->po_id)
                     ->where('product_id', $detail->product_id)
                     ->first();
 
@@ -66,14 +84,14 @@ class GoodsReceiptObserver
             }
         }
 
-        // Update PO status (if linked to PO)
+        // Update PO status
         if ($goodsReceipt->po_id) {
             $this->updatePurchaseOrderStatus($goodsReceipt->po_id);
         }
 
         // Save total amount to GR
         $goodsReceipt->total_amount = $totalAmount;
-        $goodsReceipt->save();
+        $goodsReceipt->saveQuietly();
 
         // Auto journal
         JournalService::journalGoodsReceipt($totalAmount, $goodsReceipt->created_by);

@@ -59,6 +59,7 @@ class AppServiceProvider extends ServiceProvider
                 'cash-out' => 'manage_cash_out',
                 'expense-categories' => 'manage_expenses',
                 'sales-invoices' => 'manage_sales_orders',
+				'pos' => 'manage_pos',
                 'users' => 'manage_users',
             ];
 

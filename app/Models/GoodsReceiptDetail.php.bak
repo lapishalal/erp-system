@@ -20,6 +20,12 @@ class GoodsReceiptDetail extends Model
         'subtotal',
     ];
 
+    protected $attributes = [
+        'qty' => 0,
+        'buy_price' => 0,
+        'subtotal' => 0,
+    ];
+
     protected $casts = [
         'qty' => 'integer',
         'buy_price' => 'decimal:2',
