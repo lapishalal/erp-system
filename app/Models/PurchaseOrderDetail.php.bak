@@ -22,11 +22,6 @@ class PurchaseOrderDetail extends Model
         'subtotal',
     ];
 
-    protected $attributes = [
-        'received_qty' => 0,
-        'remaining_qty' => 0,
-    ];
-
     protected $casts = [
         'qty' => 'integer',
         'unit_price' => 'decimal:2',

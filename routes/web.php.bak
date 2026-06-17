@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\TelegramWebhookController;
 use App\Http\Controllers\PosController;
 use App\Exports\BalanceSheetExport;
 use App\Exports\ProfitLossExport;
@@ -56,11 +55,3 @@ Route::get('/pos-report/export', function () {
     $filters = request()->only(['dari', 'sampai', 'payment_method', 'created_by']);
     return Excel::download(new \App\Exports\PosTransactionExport($filters), 'riwayat-pos-' . now()->format('Ymd') . '.xlsx');
 })->name('pos-report.export');
-
-Route::get('/payroll/{payroll}/print', function (\App\Models\Payroll $payroll) {
-    $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.payroll', compact('payroll'));
-    return $pdf->stream('slip-gaji-' . $payroll->payroll_number . '.pdf');
-})->name('payroll.print');
-
-// Telegram Webhook
-Route::post('/telegram/webhook', [TelegramWebhookController::class, 'handle']);

@@ -56,17 +56,6 @@ class UserResource extends Resource
                             ->label('Telepon / WA')
                             ->tel()
                             ->maxLength(50),
-							
-						Forms\Components\TextInput::make('telegram_chat_id')
-							->label('Telegram Chat ID')
-							->placeholder('Diisi otomatis oleh bot')
-							->disabled()
-							->dehydrated(false)
-							->columnSpan(1),
-						
-						Forms\Components\Toggle::make('telegram_notifications')
-							->label('Notifikasi Telegram')
-							->default(false),
 
                         Forms\Components\FileUpload::make('avatar')
                             ->label('Foto Profil')
@@ -80,7 +69,7 @@ class UserResource extends Resource
                             ->default(true),
                     ])->columns(2),
 
-                    Forms\Components\Section::make('Hak Akses — Centang Fitur yang Diizinkan')
+                Forms\Components\Section::make('Hak Akses — Centang Fitur yang Diizinkan')
                     ->description('Admin bebas menentukan fitur apa saja yang bisa diakses oleh user ini')
                     ->visible(fn (?User $record): bool => auth()->user()->hasRole('Admin') || auth()->id() !== $record?->id)
                     ->schema([
@@ -128,6 +117,77 @@ class UserResource extends Resource
                             ->columns(2)
                             ->gridDirection('row'),
                     ]),
+                    
+                Forms\Components\Section::make('Telegram')
+    ->description('Hubungkan akun Telegram untuk notifikasi dan input transaksi via bot')
+    ->schema([
+        Forms\Components\Placeholder::make('telegram_status')
+            ->label('Status')
+            ->content(function ($record) {
+                if ($record->telegram_chat_id) {
+                    return new \Illuminate\Support\HtmlString('✅ <span class="text-success-600 font-bold">Terhubung</span>');
+                }
+                return new \Illuminate\Support\HtmlString('❌ <span class="text-danger-600">Belum terhubung</span>');
+            }),
+
+        Forms\Components\Placeholder::make('telegram_chat_id')
+            ->label('Chat ID')
+            ->visible(fn ($record) => !empty($record->telegram_chat_id))
+            ->content(fn ($record) => $record->telegram_chat_id),
+
+        Forms\Components\Actions::make([
+            Forms\Components\Actions\Action::make('generate_link_code')
+                ->label(fn ($record) => $record->telegram_chat_id ? 'Ganti Koneksi' : 'Hubungkan Telegram')
+                ->icon('heroicon-o-link')
+                ->color('primary')
+                ->form([
+                    Forms\Components\Placeholder::make('instruction')
+                        ->label('Langkah')
+                        ->content(new \Illuminate\Support\HtmlString('
+                            <ol class="list-decimal pl-4 space-y-1">
+                                <li>Klik tombol <b>Buka Bot</b> di bawah</li>
+                                <li>Kirim pesan: <code>/link {kode}</code></li>
+                                <li>Kode berlaku 30 menit</li>
+                            </ol>
+                        ')),
+                    Forms\Components\Placeholder::make('generated_code')
+                        ->label('Kode Anda')
+                        ->content(function ($record) {
+                            // Hapus kode lama yang belum dipakai
+                            TelegramLinkCode::where('user_id', $record->id)
+                                ->where('is_used', false)
+                                ->delete();
+
+                            $code = strtoupper(substr(md5(uniqid()), 0, 6));
+                            
+                            TelegramLinkCode::create([
+                                'code' => $code,
+                                'user_id' => $record->id,
+                                'tenant_id' => null, // atau auth()->user()->tenant_id
+                                'expires_at' => now()->addMinutes(30),
+                            ]);
+
+                            return new \Illuminate\Support\HtmlString('
+                                <div class="bg-gray-100 dark:bg-gray-800 p-3 rounded-lg text-center font-mono text-lg font-bold tracking-widest">
+                                    ' . $code . '
+                                </div>
+                            ');
+                        }),
+                ])
+                ->modalHeading('Hubungkan Telegram')
+                ->modalSubmitActionLabel('Tutup')
+                ->action(function () {}),
+
+            Forms\Components\Actions\Action::make('open_bot')
+                ->label('Buka Bot')
+                ->icon('heroicon-o-paper-airplane')
+                ->color('success')
+                ->url('https://t.me/Erpmantap_Bot')
+                ->openUrlInNewTab(),
+        ])
+        ->columnSpanFull(),
+    ]),
+    
             ]);
     }
 
@@ -149,12 +209,6 @@ class UserResource extends Resource
                 
                 Tables\Columns\TextColumn::make('phone')
                     ->placeholder('-'),
-					
-				Tables\Columns\TextColumn::make('telegram_chat_id')
-					->label('Telegram')
-					->placeholder('Belum terhubung')
-					->copyable()
-					->searchable(),
                 
                 Tables\Columns\TextColumn::make('roles')
                     ->label('Role')

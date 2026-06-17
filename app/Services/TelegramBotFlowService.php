@@ -53,6 +53,18 @@ class TelegramBotFlowService
             Log::warning('No text in message');
             return;
         }
+        
+        // Handle /start dengan parameter (deep link)
+        if (isset($update['message']['text']) && str_starts_with($update['message']['text'], '/start ')) {
+            $param = trim(str_replace('/start ', '', $update['message']['text']));
+            $chatId = (string) $update['message']['chat']['id'];
+
+            if (str_starts_with($param, 'link_')) {
+                $code = str_replace('link_', '', $param);
+                $this->handleLinkCode($chatId, $code);
+                return;
+            }
+        }
 
         $chatId = (string) $update['message']['chat']['id'];
         $text = trim($update['message']['text']);
@@ -103,9 +115,68 @@ class TelegramBotFlowService
             case '/cekharga':
                 $this->cmdCekHarga($chatId, $text);
                 break;
+            case '/link':
+                $this->cmdLink($chatId, $text, $session);
+                break;
             default:
                 $this->tg->sendMessage($chatId, "❌ Perintah tidak dikenal.\nKetik /menu untuk bantuan.");
         }
+    }
+    
+    protected function cmdLink(string $chatId, string $text, TelegramSession $session): void
+    {
+        $parts = explode(' ', $text, 2);
+        $code = $parts[1] ?? null;
+
+        if (!$code) {
+            $this->tg->sendMessage($chatId, "❌ Format: <code>/link KODE</code>\nContoh: <code>/link WMG5XP</code>");
+            return;
+        }
+
+        $this->handleLinkCode($chatId, strtoupper(trim($code)));
+    }
+
+    protected function handleLinkCode(string $chatId, string $code): void
+    {
+        $linkCode = TelegramLinkCode::where('code', $code)
+            ->where('is_used', false)
+            ->first();
+
+        if (!$linkCode) {
+            $this->tg->sendMessage($chatId, "❌ Kode tidak ditemukan atau sudah digunakan.");
+            return;
+        }
+
+        if ($linkCode->isExpired()) {
+            $this->tg->sendMessage($chatId, "❌ Kode sudah expired. Silakan generate kode baru dari aplikasi.");
+            return;
+        }
+
+        $user = $linkCode->user;
+        if (!$user) {
+            $this->tg->sendMessage($chatId, "❌ User tidak ditemukan.");
+            return;
+        }
+
+        // Link akun
+        $user->update([
+            'telegram_chat_id' => $chatId,
+            'telegram_notifications' => true,
+        ]);
+
+        $linkCode->update(['is_used' => true]);
+
+        // Hapus session lama (kalau ada)
+        TelegramSession::where('chat_id', $chatId)->delete();
+
+        // Buat session baru
+        TelegramSession::create([
+            'chat_id' => $chatId,
+            'user_id' => $user->id,
+            'state' => 'idle',
+        ]);
+
+        $this->tg->sendMessage($chatId, "✅ <b>Akun berhasil terhubung!</b>\n\n👋 Halo {$user->name},\nAkun Telegram Anda sudah terhubung dengan ERP.\n\nKetik /menu untuk mulai.");
     }
 
     protected function handleState(string $chatId, string $text, TelegramSession $session): void

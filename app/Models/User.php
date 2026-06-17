@@ -21,7 +21,7 @@ class User extends Authenticatable
         'avatar',
         'is_active',
         'last_login_at',
-		'telegram_chat_id',
+        'telegram_chat_id',
         'telegram_notifications',
     ];
 
@@ -38,5 +38,10 @@ class User extends Authenticatable
             'is_active' => 'boolean',
             'last_login_at' => 'datetime',
         ];
+    }
+    
+    public function telegramLinkCodes(): HasMany
+    {
+        return $this->hasMany(TelegramLinkCode::class);
     }
 }

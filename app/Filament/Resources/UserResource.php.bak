@@ -56,17 +56,6 @@ class UserResource extends Resource
                             ->label('Telepon / WA')
                             ->tel()
                             ->maxLength(50),
-							
-						Forms\Components\TextInput::make('telegram_chat_id')
-							->label('Telegram Chat ID')
-							->placeholder('Diisi otomatis oleh bot')
-							->disabled()
-							->dehydrated(false)
-							->columnSpan(1),
-						
-						Forms\Components\Toggle::make('telegram_notifications')
-							->label('Notifikasi Telegram')
-							->default(false),
 
                         Forms\Components\FileUpload::make('avatar')
                             ->label('Foto Profil')
@@ -117,7 +106,6 @@ class UserResource extends Resource
                                             'manage_users' => '👤 User & Hak Akses',
                                             'manage_settings' => '⚙️ Pengaturan',
 											'manage_pos' => '🛒 POS / Kasir',
-											'manage_payroll' => '💼 Payroll / Gaji Karyawan',
                                             default => $permission->name,
                                         };
                                         return [$permission->id => $label];

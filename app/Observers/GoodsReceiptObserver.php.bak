@@ -52,7 +52,7 @@ class GoodsReceiptObserver
 
             $totalAmount += ($detail->buy_price * $detail->qty);
 
-            // Update PO detail received qty (if linked to PO)
+            // Update PO detail received qty
             if ($goodsReceipt->po_id) {
                 $poDetail = \App\Models\PurchaseOrderDetail::where('po_id', $goodsReceipt->po_id)
                     ->where('product_id', $detail->product_id)
@@ -66,14 +66,10 @@ class GoodsReceiptObserver
             }
         }
 
-        // Update PO status (if linked to PO)
+        // Update PO status
         if ($goodsReceipt->po_id) {
             $this->updatePurchaseOrderStatus($goodsReceipt->po_id);
         }
-
-        // Save total amount to GR
-        $goodsReceipt->total_amount = $totalAmount;
-        $goodsReceipt->save();
 
         // Auto journal
         JournalService::journalGoodsReceipt($totalAmount, $goodsReceipt->created_by);

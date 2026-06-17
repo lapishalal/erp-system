@@ -64,53 +64,56 @@ class PurchaseOrderResource extends Resource
                     ])->columns(2),
 
                 Forms\Components\Section::make('Detail Barang')
-                    ->schema([
-                        Forms\Components\Repeater::make('details')
-                            ->relationship('details')
-                            ->schema([
-                                Forms\Components\Select::make('product_id')
-                                    ->label('Barang')
-                                    ->options(Product::pluck('name', 'id'))
-                                    ->searchable()
-                                    ->required(),
-                                Forms\Components\TextInput::make('qty')
-                                    ->label('Qty')
-                                    ->numeric()
-                                    ->required()
-                                    ->default(1)
-                                    ->live()
-                                    ->afterStateUpdated(function ($state, $get, Forms\Set $set) {
-                                        $price = $get('unit_price') ?? 0;
-                                        $set('subtotal', ($state ?? 0) * $price);
-                                    }),
-                                Forms\Components\TextInput::make('unit_price')
-                                    ->label('Harga Beli')
-                                    ->numeric()
-                                    ->prefix('Rp')
-                                    ->required()
-                                    ->live()
-                                    ->afterStateUpdated(function ($state, $get, Forms\Set $set) {
-                                        $qty = $get('qty') ?? 0;
-                                        $set('subtotal', $qty * ($state ?? 0));
-                                    }),
-                                Forms\Components\TextInput::make('subtotal')
-                                    ->label('Subtotal')
-                                    ->numeric()
-                                    ->prefix('Rp')
-                                    ->disabled()
-                                    ->dehydrated(true),
-                            ])
-                            ->columns(4)
-                            ->addActionLabel('Tambah Barang')
-                            ->live()
-                            ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                $total = 0;
-                                foreach ($state ?? [] as $item) {
-                                    $total += ($item['qty'] ?? 0) * ($item['unit_price'] ?? 0);
-                                }
-                                $set('total_amount', $total);
-                            }),
-                    ]),
+    ->schema([
+        Forms\Components\Repeater::make('details')
+            ->relationship('details')
+            ->schema([
+                Forms\Components\Select::make('product_id')
+                    ->label('Barang')
+                    ->options(Product::pluck('name', 'id'))
+                    ->searchable()
+                    ->required(),
+
+                Forms\Components\TextInput::make('qty')
+                    ->label('Qty')
+                    ->numeric()
+                    ->required()
+                    ->default(1)
+                    ->live(onBlur: true) // ✅ hanya update saat blur
+                    ->afterStateUpdated(function ($state, $get, Forms\Set $set) {
+                        $price = $get('unit_price') ?? 0;
+                        $set('subtotal', ($state ?? 0) * $price);
+                    }),
+
+                Forms\Components\TextInput::make('unit_price')
+                    ->label('Harga Beli')
+                    ->numeric()
+                    ->prefix('Rp')
+                    ->required()
+                    ->live(onBlur: true) // ✅ hanya update saat blur
+                    ->afterStateUpdated(function ($state, $get, Forms\Set $set) {
+                        $qty = $get('qty') ?? 0;
+                        $set('subtotal', $qty * ($state ?? 0));
+                    }),
+
+                Forms\Components\TextInput::make('subtotal')
+                    ->label('Subtotal')
+                    ->numeric()
+                    ->prefix('Rp')
+                    ->disabled()
+                    ->dehydrated(true),
+            ])
+            ->columns(4)
+            ->addActionLabel('Tambah Barang')
+            // ->live() // ❌ HAPUS live() dari Repeater
+            ->afterStateUpdated(function ($state, Forms\Set $set) {
+                $total = 0;
+                foreach ($state ?? [] as $item) {
+                    $total += ($item['qty'] ?? 0) * ($item['unit_price'] ?? 0);
+                }
+                $set('total_amount', $total);
+            }),
+    ]),
 
                 Forms\Components\Section::make('Ringkasan')
                     ->schema([
