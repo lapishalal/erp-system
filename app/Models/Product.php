@@ -8,12 +8,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use App\Traits\Auditable;
+use App\Traits\BelongsToTenant;
 
 class Product extends Model
 {
-    use HasFactory, Auditable;
+    use HasFactory, Auditable, BelongsToTenant;
 
     protected $fillable = [
+        'tenant_id',
         'code',
         'name',
         'brand_id',

@@ -21,7 +21,7 @@ class SupplierResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()->hasRole('Admin') || auth()->user()->hasPermissionTo('manage_suppliers');
+        return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('manage_suppliers');
     }
 	
     public static function form(Form $form): Form

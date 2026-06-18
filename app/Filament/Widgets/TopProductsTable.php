@@ -14,7 +14,7 @@ class TopProductsTable extends BaseWidget
 
     public static function canView(): bool
     {
-        return auth()->user()->hasRole('Admin') || auth()->user()->hasPermissionTo('view_reports');
+        return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('view_reports');
     }
 
     public function table(Table $table): Table

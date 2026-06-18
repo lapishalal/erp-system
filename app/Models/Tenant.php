@@ -2,29 +2,43 @@
 
 namespace App\Models;
 
-use Stancl\Tenancy\Database\Models\Tenant as BaseTenant;
-use Stancl\Tenancy\Contracts\TenantWithDatabase;
-use Stancl\Tenancy\Database\Concerns\HasDatabase;
-use Stancl\Tenancy\Database\Concerns\HasDomains;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
-class Tenant extends BaseTenant implements TenantWithDatabase
+class Tenant extends Model
 {
-    use HasDatabase;
-    use HasDomains;
+    use HasFactory;
 
-    public static function getCustomColumns(): array
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+
+    protected $fillable = [
+        'id',
+        'name',
+        'slug',
+        'email',
+        'phone',
+        'address',
+        'is_active',
+    ];
+
+    protected $casts = [
+        'is_active' => 'boolean',
+    ];
+
+    protected static function booted(): void
     {
-        return [
-            'id',
-            'name',
-            'email',
-            'phone',
-            'address',
-            'plan',
-            'is_active',
-            'expired_at',
-            'created_at',
-            'updated_at',
-        ];
+        static::creating(function ($tenant) {
+            if (empty($tenant->id)) {
+                $tenant->id = (string) Str::uuid();
+            }
+        });
+    }
+
+    public function users()
+    {
+        return $this->hasMany(User::class);
     }
 }

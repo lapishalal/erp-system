@@ -14,7 +14,7 @@ class LowStockTable extends BaseWidget
 
     public static function canView(): bool
     {
-        return auth()->user()->hasRole('Admin') || auth()->user()->hasPermissionTo('view_reports') || auth()->user()->hasPermissionTo('manage_inventory');
+        return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('view_reports') || auth()->check() && auth()->user()->hasPermissionTo('manage_inventory');
     }
 
     public function table(Table $table): Table

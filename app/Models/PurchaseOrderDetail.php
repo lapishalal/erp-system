@@ -6,9 +6,10 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+use App\Traits\BelongsToTenant;
 class PurchaseOrderDetail extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToTenant;
 
     protected $fillable = [
         'po_id',

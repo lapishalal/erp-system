@@ -22,7 +22,13 @@ class UserResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()->hasRole('Admin') || auth()->user()->hasPermissionTo('manage_users');
+        return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('manage_users');
+    }
+    
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        return parent::getEloquentQuery()
+            ->where('tenant_id', auth()->user()->tenant_id);
     }
 	
     public static function form(Form $form): Form
@@ -71,7 +77,7 @@ class UserResource extends Resource
 
                 Forms\Components\Section::make('Hak Akses — Centang Fitur yang Diizinkan')
                     ->description('Admin bebas menentukan fitur apa saja yang bisa diakses oleh user ini')
-                    ->visible(fn (?User $record): bool => auth()->user()->hasRole('Admin') || auth()->id() !== $record?->id)
+                    ->visible(fn (?User $record): bool => auth()->check() && auth()->user()->hasRole('Admin') || auth()->id() !== $record?->id)
                     ->schema([
                         Forms\Components\CheckboxList::make('permissions')
                             ->label(false)
@@ -230,7 +236,7 @@ class UserResource extends Resource
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
-                    ->visible(fn (User $record): bool => $record->id !== auth()->id()),
+                    ->visible(fn (User $record): bool => auth()->check() && $record->id !== auth()->id()),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

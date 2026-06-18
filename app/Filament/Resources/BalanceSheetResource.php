@@ -22,9 +22,9 @@ class BalanceSheetResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()->hasRole('Admin') 
-            || auth()->user()->hasPermissionTo('view_balance_sheet')
-            || auth()->user()->hasPermissionTo('view_financial_report');
+        return auth()->check() && auth()->user()->hasRole('Admin') 
+            || auth()->check() && auth()->user()->hasPermissionTo('view_balance_sheet')
+            || auth()->check() && auth()->user()->hasPermissionTo('view_financial_report');
     }
 
     public static function form(Form $form): Form

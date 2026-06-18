@@ -19,6 +19,7 @@ class User extends Authenticatable
         'password',
         'phone',
         'avatar',
+        'tenant_id',
         'is_active',
         'last_login_at',
         'telegram_chat_id',
@@ -43,5 +44,15 @@ class User extends Authenticatable
     public function telegramLinkCodes(): HasMany
     {
         return $this->hasMany(TelegramLinkCode::class);
+    }
+    
+    public function tenant()
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
+    public function isTenantAdmin(): bool
+    {
+        return $this->hasRole('Admin');
     }
 }

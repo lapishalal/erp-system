@@ -12,6 +12,7 @@ use App\Observers\CashOutObserver;
 use App\Observers\DeliveryOrderObserver;
 use App\Observers\GoodsReceiptObserver;
 use App\Observers\SalesInvoiceObserver;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -20,6 +21,11 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         //
+    }
+    
+    public static function canAccess(): bool
+    {
+        return auth()->check() && (auth()->user()->hasRole('Admin') || auth()->user()->hasPermissionTo('manage_users'));
     }
 
     public function boot(): void
@@ -31,52 +37,54 @@ class AppServiceProvider extends ServiceProvider
         CashOut::observe(CashOutObserver::class);
 
         // Hide navigation items based on permission
-        Gate::before(function ($user, $ability, $models) {
-            if (!$user) {
-                return null;
-            }
-
-            if ($user->hasRole('Admin')) {
-                return true;
-            }
-
-            $path = request()->path();
-
-            $map = [
-                'brands' => 'manage_master_data',
-                'categories' => 'manage_master_data',
-                'products' => 'manage_products',
-                'customers' => 'manage_customers',
-                'suppliers' => 'manage_suppliers',
-                'warehouses' => 'manage_master_data',
-                'sales-orders' => 'manage_sales_orders',
-                'delivery-orders' => 'manage_delivery_orders',
-                'purchase-orders' => 'manage_purchase_orders',
-                'goods-receipts' => 'manage_goods_receipts',
-                'product-stocks' => 'manage_inventory',
-                'stock-opnames' => 'manage_stock_opname',
-                'cash-in' => 'manage_cash_in',
-                'cash-out' => 'manage_cash_out',
-                'expense-categories' => 'manage_expenses',
-                'sales-invoices' => 'manage_sales_orders',
-				'pos' => 'manage_pos',
-                'users' => 'manage_users',
-            ];
-
-            foreach ($map as $slug => $permission) {
-                if (str_contains($path, 'admin/' . $slug)) {
-                    if ($slug === 'users' && in_array($ability, ['view', 'update']) && !empty($models) && $models[0] instanceof \App\Models\User && $models[0]->id === $user->id) {
-                        return true;
-                    }
-                    return $user->hasPermissionTo($permission) ?: false;
+        if (Auth::check()) {
+            Gate::before(function ($user, $ability, $models) {
+                if (!$user) {
+                    return null;
                 }
-            }
 
-            if ($path === 'admin' || $path === 'admin/') {
-                return $user->hasPermissionTo('view_dashboard') ?: false;
-            }
+                if ($user->hasRole('Admin')) {
+                    return true;
+                }
 
-            return null;
-        });
+                $path = request()->path();
+
+                $map = [
+                    'brands' => 'manage_master_data',
+                    'categories' => 'manage_master_data',
+                    'products' => 'manage_products',
+                    'customers' => 'manage_customers',
+                    'suppliers' => 'manage_suppliers',
+                    'warehouses' => 'manage_master_data',
+                    'sales-orders' => 'manage_sales_orders',
+                    'delivery-orders' => 'manage_delivery_orders',
+                    'purchase-orders' => 'manage_purchase_orders',
+                    'goods-receipts' => 'manage_goods_receipts',
+                    'product-stocks' => 'manage_inventory',
+                    'stock-opnames' => 'manage_stock_opname',
+                    'cash-in' => 'manage_cash_in',
+                    'cash-out' => 'manage_cash_out',
+                    'expense-categories' => 'manage_expenses',
+                    'sales-invoices' => 'manage_sales_orders',
+                    'pos' => 'manage_pos',
+                    'users' => 'manage_users',
+                ];
+
+                foreach ($map as $slug => $permission) {
+                    if (str_contains($path, 'admin/' . $slug)) {
+                        if ($slug === 'users' && in_array($ability, ['view', 'update']) && !empty($models) && $models[0] instanceof \App\Models\User && $models[0]->id === $user->id) {
+                            return true;
+                        }
+                        return $user->hasPermissionTo($permission) ?: false;
+                    }
+                }
+
+                if ($path === 'admin' || $path === 'admin/') {
+                    return $user->hasPermissionTo('view_dashboard') ?: false;
+                }
+
+                return null;
+            });
+        }
     }
 }

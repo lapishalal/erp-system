@@ -22,7 +22,7 @@ class CashOutResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()->hasRole('Admin') || auth()->user()->hasPermissionTo('manage_cash_out');
+        return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('manage_cash_out');
     }
 	
     public static function form(Form $form): Form

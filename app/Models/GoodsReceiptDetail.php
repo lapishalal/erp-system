@@ -7,9 +7,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
 
+use App\Traits\BelongsToTenant;
 class GoodsReceiptDetail extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToTenant;
 
     protected $table = 'goods_receipt_details';
 

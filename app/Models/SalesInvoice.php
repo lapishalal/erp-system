@@ -7,10 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Traits\Auditable;
+use App\Traits\BelongsToTenant;
 
 class SalesInvoice extends Model
 {
-    use HasFactory, Auditable;
+    use HasFactory, Auditable, BelongsToTenant;
 
     protected $fillable = [
         'invoice_number',

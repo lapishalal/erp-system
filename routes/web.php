@@ -8,6 +8,18 @@ use App\Exports\StockReportExport;
 use App\Models\SalesInvoice;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Route;
+use App\Filament\Pages\RegisterCompany;
+
+Route::get('/admin/register', RegisterCompany::class)
+    ->name('filament.admin.auth.register')
+    ->middleware([
+        \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+        \Illuminate\Cookie\Middleware\EncryptCookies::class,
+        \Illuminate\Session\Middleware\StartSession::class,
+        \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+        \Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class,
+        \Illuminate\Routing\Middleware\SubstituteBindings::class,
+    ]);
 
 Route::get('/login', function () {
     return redirect('/admin');

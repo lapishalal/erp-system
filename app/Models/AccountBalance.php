@@ -6,10 +6,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Traits\Auditable;
+use App\Traits\BelongsToTenant;
 
 class AccountBalance extends Model
 {
-    use HasFactory, Auditable;
+    use HasFactory, Auditable, BelongsToTenant;
 
     protected $fillable = [
         'account_id',

@@ -22,7 +22,7 @@ class JournalEntryResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()->hasRole('Admin') || auth()->user()->hasPermissionTo('manage_accounting');
+        return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('manage_accounting');
     }
 
     public static function form(Form $form): Form

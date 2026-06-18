@@ -7,9 +7,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
+use App\Traits\BelongsToTenant;
 class AuditLog extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToTenant;
 
     protected $fillable = [
         'user_id',

@@ -23,9 +23,9 @@ class ProfitLossResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()->hasRole('Admin') 
-            || auth()->user()->hasPermissionTo('view_profit_loss')
-            || auth()->user()->hasPermissionTo('view_financial_report');
+        return auth()->check() && auth()->user()->hasRole('Admin') 
+            || auth()->check() && auth()->user()->hasPermissionTo('view_profit_loss')
+            || auth()->check() && auth()->user()->hasPermissionTo('view_financial_report');
     }
 
     public static function form(Form $form): Form

@@ -13,7 +13,7 @@ class DashboardStats extends BaseWidget
     protected function getStats(): array
     {
         // Pegawai biasa (non-admin) tidak boleh lihat omset & profit
-        if (!auth()->user()->hasRole('Admin') && !auth()->user()->hasPermissionTo('view_reports')) {
+        if (!auth()->check() && auth()->user()->hasRole('Admin') && !auth()->check() && auth()->user()->hasPermissionTo('view_reports')) {
             return [
                 Stat::make('Selamat Datang', auth()->user()->name)
                     ->icon('heroicon-o-user')

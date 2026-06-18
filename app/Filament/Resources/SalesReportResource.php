@@ -22,7 +22,7 @@ class SalesReportResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()->hasRole('Admin') || auth()->user()->hasPermissionTo('view_sales_report');
+        return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('view_sales_report');
     }
 
     public static function form(Form $form): Form

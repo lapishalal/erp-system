@@ -25,7 +25,7 @@ class GoodsReceiptResource extends Resource
 
     public static function canAccess(): bool
     {
-        return auth()->user()->hasRole('Admin') || auth()->user()->hasPermissionTo('manage_goods_receipts');
+        return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('manage_goods_receipts');
     }
 
     public static function form(Form $form): Form

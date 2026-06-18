@@ -6,9 +6,10 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+use App\Traits\BelongsToTenant;
 class TelegramLinkCode extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToTenant;
 
     protected $fillable = ['code', 'user_id', 'tenant_id', 'expires_at', 'is_used'];
 

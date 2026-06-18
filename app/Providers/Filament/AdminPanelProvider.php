@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\RegisterCompany;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
@@ -22,6 +23,10 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            ->renderHook(
+                'panels::auth.login.form.after',
+                fn () => view('filament.links.register-link')
+            )
             ->colors([
                 'primary' => Color::Blue,
             ])
@@ -64,6 +69,8 @@ class AdminPanelProvider extends PanelProvider
                 \App\Filament\Pages\CashFlowReport::class,
 				\App\Filament\Pages\PosPage::class,
 				\App\Filament\Pages\LedgerReport::class,
+				\App\Filament\Pages\RegisterCompany::class,
+				
             ])
             ->widgets([
                 \App\Filament\Widgets\DashboardStats::class,

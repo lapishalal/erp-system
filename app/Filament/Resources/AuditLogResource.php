@@ -22,8 +22,8 @@ class AuditLogResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()->hasRole('Admin')
-            || auth()->user()->hasPermissionTo('view_audit_log');
+        return auth()->check() && auth()->user()->hasRole('Admin')
+            || auth()->check() && auth()->user()->hasPermissionTo('view_audit_log');
     }
 
     public static function form(Form $form): Form
