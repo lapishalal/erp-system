@@ -14,6 +14,7 @@ class SalesOrder extends Model
     use HasFactory, Auditable, BelongsToTenant;
 
     protected $fillable = [
+        'tenant_id',
         'so_number',
         'date',
         'customer_id',
@@ -64,4 +65,5 @@ class SalesOrder extends Model
     {
         return $this->belongsTo(User::class, 'approved_by');
     }
+    
 }

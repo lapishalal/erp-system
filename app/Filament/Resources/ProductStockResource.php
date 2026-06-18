@@ -9,6 +9,11 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 class ProductStockResource extends Resource
 {
@@ -60,8 +65,6 @@ class ProductStockResource extends Resource
                     ->label('Nama Barang')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('product.brand.name')
-                    ->label('Brand'),
                 Tables\Columns\TextColumn::make('warehouse.name')
                     ->label('Gudang'),
                 Tables\Columns\TextColumn::make('physical_stock')
@@ -78,6 +81,34 @@ class ProductStockResource extends Resource
                 Tables\Columns\TextColumn::make('product.min_stock')
                     ->label('Min Stok')
                     ->numeric(),
+                // =========================================================
+                // KOLOM BARU: PREVIEW TOTAL PENDING KE CUSTOMER
+                // =========================================================
+                Tables\Columns\TextColumn::make('total_pending_customer')
+                    ->label('Pending ke Customer')
+                    ->numeric(decimalPlaces: 0)
+                    ->sortable(query: function (Builder $query, string $direction): Builder {
+                        return $query->orderBy(
+                            DB::table('sales_order_details')
+                                ->selectRaw('COALESCE(SUM(remaining_qty), 0)')
+                                ->whereColumn('sales_order_details.product_id', 'product_stocks.product_id')
+                                ->where('sales_order_details.remaining_qty', '>', 0)
+                                ->whereExists(function ($q) {
+                                    $q->select(DB::raw(1))
+                                      ->from('sales_orders')
+                                      ->whereColumn('sales_orders.id', 'sales_order_details.so_id')
+                                      ->whereIn('sales_orders.status', ['OPEN', 'PARTIAL']);
+                                }),
+                            $direction
+                        );
+                    })
+                    ->alignment('center')
+                    ->color('warning')
+                    ->icon('heroicon-o-clock')
+                    ->badge()
+                    ->formatStateUsing(fn (int $state): string => number_format($state, 0, ',', '.') . ' unit')
+                    ->tooltip('Klik tombol "Lihat" untuk detail per customer'),    
+                    
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('warehouse_id')
@@ -93,7 +124,99 @@ class ProductStockResource extends Resource
                     ),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
+                // =========================================================
+                // TOMBOL BARU: LIHAT PENDING (SELALU MUNCUL)
+                // =========================================================
+                Tables\Actions\Action::make('viewPending')
+                    ->label('Lihat')
+                    ->icon('heroicon-o-eye')
+                    ->color('warning')
+                    ->button()
+                    ->size('sm')
+                    ->modalHeading(function (ProductStock $record): string {
+                        $name = $record->product ? $record->product->name : '-';
+                        return 'Pending ke Customer: ' . $name;
+                    })
+                    ->modalDescription(function (ProductStock $record): string {
+                        $sku = ($record->product && $record->product->code) ? $record->product->code : '-';
+                        $wh = $record->warehouse ? $record->warehouse->name : '-';
+                        return 'Kode: ' . $sku . ' | Gudang: ' . $wh;
+                    })
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Tutup')
+                    ->modalWidth('4xl')
+                    ->modalContent(function (ProductStock $record) {
+                        $productId = $record->product_id;
+
+                        // Query langsung ke database (tanpa model baru)
+                        $pendingRows = DB::table('sales_order_details')
+                            ->select([
+                                'sales_order_details.so_id',
+                                'sales_order_details.qty',
+                                'sales_order_details.delivered_qty',
+                                'sales_order_details.remaining_qty',
+                                'sales_order_details.unit_price',
+                                'sales_orders.so_number',
+                                'sales_orders.date as so_date',
+                                'sales_orders.status as so_status',
+                                'customers.id as customer_id',
+                                'customers.name as customer_name',
+                            ])
+                            ->join('sales_orders', 'sales_orders.id', '=', 'sales_order_details.so_id')
+                            ->leftJoin('customers', 'customers.id', '=', 'sales_orders.customer_id')
+                            ->where('sales_order_details.product_id', $productId)
+                            ->where('sales_order_details.remaining_qty', '>', 0)
+                            ->whereIn('sales_orders.status', ['OPEN', 'PARTIAL'])
+                            ->orderBy('customers.name')
+                            ->orderBy('sales_orders.date')
+                            ->get();
+
+                        // Group by customer
+                        $customers = [];
+                        $totalPending = 0;
+
+                        foreach ($pendingRows as $row) {
+                            $cName = $row->customer_name ?: 'Tanpa Customer';
+                            $cId = $row->customer_id ?: 0;
+
+                            if (!isset($customers[$cId])) {
+                                $customers[$cId] = [
+                                    'customer_id' => $cId,
+                                    'customer_name' => $cName,
+                                    'total_pending' => 0,
+                                    'orders' => [],
+                                ];
+                            }
+
+                            $customers[$cId]['orders'][] = [
+                                'so_number' => $row->so_number ?: ('SO-' . str_pad($row->so_id, 5, '0', STR_PAD_LEFT)),
+                                'so_date' => $row->so_date ? date('d M Y', strtotime($row->so_date)) : '-',
+                                'so_status' => $row->so_status,
+                                'qty' => (int) $row->qty,
+                                'delivered_qty' => (int) $row->delivered_qty,
+                                'remaining_qty' => (int) $row->remaining_qty,
+                                'unit_price' => (float) $row->unit_price,
+                            ];
+
+                            $customers[$cId]['total_pending'] += (int) $row->remaining_qty;
+                            $totalPending += (int) $row->remaining_qty;
+                        }
+
+                        // Re-index array
+                        $customers = array_values($customers);
+
+                        // Sort customers by total_pending desc
+                        usort($customers, function ($a, $b) {
+                            return $b['total_pending'] <=> $a['total_pending'];
+                        });
+
+                        return view('filament.modals.pending-stock-customer', [
+                            'product' => $record->product,
+                            'warehouse' => $record->warehouse,
+                            'totalPending' => $totalPending,
+                            'customers' => $customers,
+                        ]);
+                    }),
             ])
             ->bulkActions([]);
     }
