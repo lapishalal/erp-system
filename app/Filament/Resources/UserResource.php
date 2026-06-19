@@ -83,7 +83,7 @@ class UserResource extends Resource
                             ->label(false)
                             ->relationship('permissions', 'name')
                             ->options(function () {
-                                return \Spatie\Permission\Models\Permission::all()
+                                return \Spatie\Permission\Models\Permission::where('tenant_id', auth()->user()->tenant_id)->get()
                                     ->mapWithKeys(function ($permission) {
                                         $label = match ($permission->name) {
                                             'view_dashboard' => '📊 Dashboard',
@@ -125,16 +125,16 @@ class UserResource extends Resource
                     ]),
                     
                 Forms\Components\Section::make('Telegram')
-    ->description('Hubungkan akun Telegram untuk notifikasi dan input transaksi via bot')
-    ->schema([
-        Forms\Components\Placeholder::make('telegram_status')
-            ->label('Status')
-            ->content(function ($record) {
-                if ($record->telegram_chat_id) {
-                    return new \Illuminate\Support\HtmlString('✅ <span class="text-success-600 font-bold">Terhubung</span>');
-                }
-                return new \Illuminate\Support\HtmlString('❌ <span class="text-danger-600">Belum terhubung</span>');
-            }),
+                    ->description('Hubungkan akun Telegram untuk notifikasi dan input transaksi via bot')
+                    ->schema([
+                        Forms\Components\Placeholder::make('telegram_status')
+                            ->label('Status')
+                            ->content(function ($record) {
+                                if ($record->telegram_chat_id) {
+                                    return new \Illuminate\Support\HtmlString('✅ <span class="text-success-600 font-bold">Terhubung</span>');
+                                }
+                                return new \Illuminate\Support\HtmlString('❌ <span class="text-danger-600">Belum terhubung</span>');
+                            }),
 
         Forms\Components\Placeholder::make('telegram_chat_id')
             ->label('Chat ID')

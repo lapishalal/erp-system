@@ -25,6 +25,14 @@ class SalesOrderResource extends Resource
     {
         return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('manage_sales_orders');
     }
+
+    // =========================================================
+    // HELPER BARU: Cek apakah user adalah Admin
+    // =========================================================
+    private static function isAdmin(): bool
+    {
+        return auth()->check() && auth()->user()->hasRole('Admin');
+    }
 	
     public static function form(Form $form): Form
     {
@@ -91,7 +99,7 @@ class SalesOrderResource extends Resource
                                     ->numeric()
                                     ->required()
                                     ->default(1)
-                                    ->live()
+                                    ->live(onBlur: true)
                                     ->afterStateUpdated(function ($state, $get, Forms\Set $set) {
                                         $price = $get('unit_price') ?? 0;
                                         $set('subtotal', ($state ?? 0) * $price);
@@ -102,18 +110,22 @@ class SalesOrderResource extends Resource
                                     ->numeric()
                                     ->prefix('Rp')
                                     ->required()
-                                    ->live()
+                                    ->live(onBlur: true)
                                     ->afterStateUpdated(function ($state, $get, Forms\Set $set) {
                                         $qty = $get('qty') ?? 0;
                                         $set('subtotal', $qty * ($state ?? 0));
                                     }),
 
+                                // =========================================================
+                                // HPP: HIDDEN untuk non-Admin (TAMBAH ->hidden())
+                                // =========================================================
                                 Forms\Components\TextInput::make('cost_price')
                                     ->label('HPP')
                                     ->numeric()
                                     ->prefix('Rp')
                                     ->disabled()
-                                    ->dehydrated(true),
+                                    ->dehydrated(true)
+                                    ->hidden(fn (): bool => !self::isAdmin()),
 
                                 Forms\Components\TextInput::make('subtotal')
                                     ->label('Subtotal')
@@ -159,19 +171,27 @@ class SalesOrderResource extends Resource
                             ->disabled()
                             ->dehydrated(true),
 
+                        // =========================================================
+                        // Total HPP: HIDDEN untuk non-Admin (TAMBAH ->hidden())
+                        // =========================================================
                         Forms\Components\TextInput::make('total_cost')
                             ->label('Total HPP')
                             ->numeric()
                             ->prefix('Rp')
                             ->disabled()
-                            ->dehydrated(true),
+                            ->dehydrated(true)
+                            ->hidden(fn (): bool => !self::isAdmin()),
 
+                        // =========================================================
+                        // Profit: HIDDEN untuk non-Admin (TAMBAH ->hidden())
+                        // =========================================================
                         Forms\Components\TextInput::make('profit')
                             ->label('Profit')
                             ->numeric()
                             ->prefix('Rp')
                             ->disabled()
-                            ->dehydrated(true),
+                            ->dehydrated(true)
+                            ->hidden(fn (): bool => !self::isAdmin()),
                     ])->columns(4),
             ]);
     }
@@ -199,8 +219,13 @@ class SalesOrderResource extends Resource
                 Tables\Columns\TextColumn::make('total_qty'),
                 Tables\Columns\TextColumn::make('total_amount')
                     ->money('IDR'),
+
+                // =========================================================
+                // Profit: HIDDEN untuk non-Admin (TAMBAH ->hidden())
+                // =========================================================
                 Tables\Columns\TextColumn::make('profit')
-                    ->money('IDR'),
+                    ->money('IDR')
+                    ->hidden(fn (): bool => !self::isAdmin()),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')

@@ -22,7 +22,7 @@ class StockReportResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('view_stock_report') || auth()->check() && auth()->user()->hasPermissionTo('manage_inventory');
+        return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('view_stock_report');
     }
 
     public static function form(Form $form): Form

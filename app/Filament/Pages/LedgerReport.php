@@ -22,6 +22,11 @@ class LedgerReport extends Page implements HasForms
     protected static ?string $title = 'Buku Besar';
     protected static string $view = 'filament.pages.ledger-report';
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('manage_accounting');
+    }
+
     public ?array $data = [];
 
     public function mount(): void

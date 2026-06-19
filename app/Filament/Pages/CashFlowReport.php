@@ -20,6 +20,11 @@ class CashFlowReport extends Page implements HasForms
     protected static ?string $slug = 'cash-flow-report';
     protected static string $view = 'filament.pages.cash-flow-report';
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('view_cash_flow');
+    }
+
     public ?array $data = [];
 
     public function mount(): void

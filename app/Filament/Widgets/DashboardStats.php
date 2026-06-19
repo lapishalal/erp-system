@@ -15,12 +15,18 @@ class DashboardStats extends BaseWidget
         // Pegawai biasa (non-admin) tidak boleh lihat omset & profit
         if (!auth()->check() && auth()->user()->hasRole('Admin') && !auth()->check() && auth()->user()->hasPermissionTo('view_reports')) {
             return [
-                Stat::make('Selamat Datang', auth()->user()->name)
-                    ->icon('heroicon-o-user')
-                    ->color('info'),
-                Stat::make('Status', 'Aktif')
-                    ->icon('heroicon-o-check-circle')
+                Stat::make('Omset Hari Ini', 'Rp ' . number_format($omsetToday, 0, ',', '.'))
+                    ->icon('heroicon-o-currency-dollar')
                     ->color('success'),
+                Stat::make('Profit Hari Ini', 'Rp ' . number_format($profitToday, 0, ',', '.'))
+                    ->icon('heroicon-o-chart-pie')
+                    ->color('info'),
+                Stat::make('Outstanding Order', 'Rp ' . number_format($outstanding, 0, ',', '.'))
+                    ->icon('heroicon-o-clipboard-document-list')
+                    ->color('warning'),
+                Stat::make('Cash Position', 'Rp ' . number_format($cashPosition, 0, ',', '.'))
+                    ->icon('heroicon-o-wallet')
+                    ->color($cashPosition >= 0 ? 'success' : 'danger'),
             ];
         }
 
@@ -43,18 +49,12 @@ class DashboardStats extends BaseWidget
         $cashPosition = $cashIn - $cashOut;
 
         return [
-            Stat::make('Omset Hari Ini', 'Rp ' . number_format($omsetToday, 0, ',', '.'))
-                ->icon('heroicon-o-currency-dollar')
-                ->color('success'),
-            Stat::make('Profit Hari Ini', 'Rp ' . number_format($profitToday, 0, ',', '.'))
-                ->icon('heroicon-o-chart-pie')
-                ->color('info'),
-            Stat::make('Outstanding Order', 'Rp ' . number_format($outstanding, 0, ',', '.'))
-                ->icon('heroicon-o-clipboard-document-list')
-                ->color('warning'),
-            Stat::make('Cash Position', 'Rp ' . number_format($cashPosition, 0, ',', '.'))
-                ->icon('heroicon-o-wallet')
-                ->color($cashPosition >= 0 ? 'success' : 'danger'),
+            Stat::make('Selamat Datang', auth()->user()->name)
+                    ->icon('heroicon-o-user')
+                    ->color('info'),
+            Stat::make('Status', 'Aktif')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('success'),
         ];
     }
 }
