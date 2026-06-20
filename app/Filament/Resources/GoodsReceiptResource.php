@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\GoodsReceiptResource\Pages;
+use App\Models\CompanySetting;
 use App\Models\GoodsReceipt;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
@@ -13,7 +14,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Support\HtmlString;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class GoodsReceiptResource extends Resource
 {
@@ -40,12 +41,10 @@ class GoodsReceiptResource extends Resource
                             ->unique(ignoreRecord: true)
                             ->default(fn () => 'GR-' . date('Ymd') . '-' . rand(1000, 9999))
                             ->maxLength(50),
-
                         Forms\Components\DatePicker::make('date')
                             ->label('Tanggal')
                             ->required()
                             ->default(now()),
-
                         Forms\Components\Select::make('po_id')
                             ->label('Purchase Order')
                             ->options(function () {
@@ -60,16 +59,13 @@ class GoodsReceiptResource extends Resource
                                     $set('details', []);
                                     return;
                                 }
-
                                 $po = PurchaseOrder::with(['details.product', 'supplier'])->find($state);
                                 if (!$po) {
                                     $set('supplier_id', null);
                                     $set('details', []);
                                     return;
                                 }
-
                                 $set('supplier_id', $po->supplier_id);
-
                                 $details = [];
                                 foreach ($po->details as $d) {
                                     $sisa = $d->remaining_qty ?? max(0, $d->qty - ($d->received_qty ?? 0));
@@ -84,7 +80,6 @@ class GoodsReceiptResource extends Resource
                                 $set('details', $details);
                             })
                             ->placeholder('Kosongkan jika barang tidak dari PO'),
-
                         Forms\Components\Select::make('supplier_id')
                             ->label('Supplier')
                             ->options(Supplier::pluck('name', 'id'))
@@ -92,14 +87,12 @@ class GoodsReceiptResource extends Resource
                             ->required()
                             ->disabled(fn (Forms\Get $get) => filled($get('po_id')))
                             ->dehydrated(true),
-
                         Forms\Components\Select::make('warehouse_id')
                             ->label('Gudang Tujuan')
                             ->options(Warehouse::pluck('name', 'id'))
                             ->searchable()
                             ->required()
                             ->default(fn () => Warehouse::first()?->id),
-
                         Forms\Components\Select::make('status')
                             ->label('Status')
                             ->options([
@@ -109,7 +102,6 @@ class GoodsReceiptResource extends Resource
                             ])
                             ->default('DRAFT')
                             ->required(),
-
                         Forms\Components\Textarea::make('notes')
                             ->label('Catatan')
                             ->columnSpanFull(),
@@ -123,9 +115,8 @@ class GoodsReceiptResource extends Resource
                             ->content(function (Forms\Get $get) {
                                 $po = PurchaseOrder::with(['details.product', 'supplier'])->find($get('po_id'));
                                 if (!$po) {
-                                    return new HtmlString('<p class="text-gray-500">PO tidak ditemukan</p>');
+                                    return new \Illuminate\Support\HtmlString('<p class="text-gray-500">PO tidak ditemukan</p>');
                                 }
-
                                 $html = '<div class="mb-2 text-sm font-semibold text-gray-700">'
                                     . 'PO: ' . e($po->po_number) . ' | Supplier: ' . e($po->supplier?->name ?? '-') . ' | Status: ' . e($po->status)
                                     . '</div>'
@@ -138,7 +129,6 @@ class GoodsReceiptResource extends Resource
                                     . '<th class="px-3 py-2 text-center">Sisa</th>'
                                     . '<th class="px-3 py-2 text-right">Harga Beli</th>'
                                     . '</tr></thead><tbody class="divide-y">';
-
                                 foreach ($po->details as $d) {
                                     $sisa = $d->remaining_qty ?? max(0, $d->qty - ($d->received_qty ?? 0));
                                     $sisaClass = $sisa > 0 ? 'text-primary-600 font-bold' : 'text-success-600';
@@ -150,13 +140,11 @@ class GoodsReceiptResource extends Resource
                                         . '<td class="px-3 py-2 text-right">Rp ' . number_format($d->unit_price, 0, ',', '.') . '</td>'
                                         . '</tr>';
                                 }
-
                                 $html .= '</tbody></table>'
                                     . '<p class="mt-2 text-xs text-gray-500">'
                                     . '* Qty Terima di bawah sudah diisi default = sisa PO. Silakan edit jika tidak semua barang datang.'
                                     . '</p>';
-
-                                return new HtmlString($html);
+                                return new \Illuminate\Support\HtmlString($html);
                             })
                             ->columnSpanFull(),
                     ])
@@ -174,7 +162,6 @@ class GoodsReceiptResource extends Resource
                                     ->required()
                                     ->disabled(fn (Forms\Get $get) => filled($get('po_id')))
                                     ->dehydrated(true),
-
                                 Forms\Components\TextInput::make('buy_price')
                                     ->label('Harga Beli')
                                     ->numeric()
@@ -182,15 +169,11 @@ class GoodsReceiptResource extends Resource
                                     ->required()
                                     ->disabled(fn (Forms\Get $get) => filled($get('po_id')))
                                     ->dehydrated(true),
-
-                                // ✅ Tanpa live() — input bebas tanpa lag/kehapus
                                 Forms\Components\TextInput::make('qty')
                                     ->label('Qty Terima')
                                     ->numeric()
                                     ->required()
                                     ->minValue(1),
-
-                                // Subtotal dihitung otomatis di model
                                 Forms\Components\TextInput::make('subtotal')
                                     ->label('Subtotal')
                                     ->numeric()
@@ -206,14 +189,12 @@ class GoodsReceiptResource extends Resource
 
                 Forms\Components\Section::make('Ringkasan')
                     ->schema([
-                        // ✅ Default 0 agar tidak NULL
                         Forms\Components\TextInput::make('total_qty')
                             ->label('Total Qty')
                             ->numeric()
                             ->default(0)
                             ->disabled()
                             ->dehydrated(true),
-
                         Forms\Components\TextInput::make('total_amount')
                             ->label('Total Nilai')
                             ->numeric()
@@ -264,8 +245,22 @@ class GoodsReceiptResource extends Resource
                     ->placeholder('Semua (termasuk tanpa PO)'),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('printPdf')
+                        ->label('Print PDF')
+                        ->icon('heroicon-o-printer')
+                        ->color('info')
+                        ->action(function (GoodsReceipt $record) {
+                            $company = CompanySetting::first();
+                            $pdf = Pdf::loadView('pdf.gr', ['gr' => $record->load('details.product', 'purchaseOrder', 'supplier', 'warehouse', 'creator'), 'company' => $company]);
+                            return response()->streamDownload(function () use ($pdf) {
+                                echo $pdf->output();
+                            }, 'GR-' . $record->gr_number . '.pdf');
+                        }),
+
+                    Tables\Actions\EditAction::make(),
+                    Tables\Actions\DeleteAction::make(),
+                ]),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

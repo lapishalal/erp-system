@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 use App\Traits\BelongsToTenant;
+
 class StockOpnameDetail extends Model
 {
     use HasFactory, BelongsToTenant;
@@ -33,6 +34,27 @@ class StockOpnameDetail extends Model
         'physical_qty' => 'integer',
         'difference_qty' => 'integer',
     ];
+
+    protected static function booted(): void
+    {
+        // ✅ Pengaman kedua: setiap detail opname tersimpan,
+        //    jika parent opname status COMPLETED, langsung sync stok.
+        static::saved(function (self $detail) {
+            $opname = $detail->opname;
+            if ($opname && $opname->status === 'COMPLETED') {
+                StockOpname::syncStock($detail, $opname->warehouse_id);
+            }
+        });
+
+        // ✅ Saat detail dihapus (misal edit opname hapus baris),
+        //    jika parent opname status COMPLETED, kembalikan stok ke system_qty.
+        static::deleting(function (self $detail) {
+            $opname = $detail->opname;
+            if ($opname && $opname->status === 'COMPLETED') {
+                StockOpname::rollbackStock($detail, $opname->warehouse_id);
+            }
+        });
+    }
 
     public function opname(): BelongsTo
     {

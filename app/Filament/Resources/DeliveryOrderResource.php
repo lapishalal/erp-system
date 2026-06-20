@@ -3,16 +3,18 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\DeliveryOrderResource\Pages;
+use App\Models\CompanySetting;
 use App\Models\Customer;
 use App\Models\DeliveryOrder;
 use App\Models\Product;
 use App\Models\SalesOrder;
-use App\Models\SalesOrderDetail;
+use App\Models\Warehouse;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class DeliveryOrderResource extends Resource
 {
@@ -27,7 +29,7 @@ class DeliveryOrderResource extends Resource
     {
         return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('manage_delivery_orders');
     }
-	
+
     public static function form(Form $form): Form
     {
         return $form
@@ -50,7 +52,7 @@ class DeliveryOrderResource extends Resource
                             ->searchable()
                             ->required()
                             ->reactive()
-							->default(fn () => request()->query('so_id'))
+                            ->default(fn () => request()->query('so_id'))
                             ->afterStateUpdated(function ($state, Forms\Set $set) {
                                 $so = SalesOrder::with('details.product')->find($state);
                                 if ($so) {
@@ -75,6 +77,12 @@ class DeliveryOrderResource extends Resource
                             ->required()
                             ->disabled()
                             ->dehydrated(true),
+                        Forms\Components\Select::make('warehouse_id')
+                            ->label('Gudang Asal')
+                            ->options(Warehouse::pluck('name', 'id'))
+                            ->searchable()
+                            ->required()
+                            ->default(fn () => Warehouse::first()?->id),
                         Forms\Components\Select::make('status')
                             ->label('Status')
                             ->options([
@@ -84,7 +92,8 @@ class DeliveryOrderResource extends Resource
                                 'CANCEL' => 'Batal',
                             ])
                             ->default('DRAFT')
-                            ->required(),
+                            ->required()
+                            ->live(),
                         Forms\Components\TextInput::make('driver')
                             ->label('Driver'),
                         Forms\Components\TextInput::make('vehicle')
@@ -115,12 +124,15 @@ class DeliveryOrderResource extends Resource
                                     ->label('Qty Kirim')
                                     ->numeric()
                                     ->required()
-                                    ->minValue(1),
+                                    ->minValue(1)
+                                    ->disabled(fn (Forms\Get $get) => in_array($get('../../status'), ['SHIPPED', 'DELIVERED'])),
                                 Forms\Components\Textarea::make('notes')
                                     ->label('Catatan'),
                             ])
                             ->columns(4)
-                            ->addActionLabel('Tambah Barang'),
+                            ->addable(fn (Forms\Get $get) => !in_array($get('status'), ['SHIPPED', 'DELIVERED']))
+                            ->deletable(fn (Forms\Get $get) => !in_array($get('status'), ['SHIPPED', 'DELIVERED']))
+                            ->reorderable(false),
                     ]),
             ]);
     }
@@ -137,6 +149,9 @@ class DeliveryOrderResource extends Resource
                 Tables\Columns\TextColumn::make('salesOrder.so_number')
                     ->label('SO'),
                 Tables\Columns\TextColumn::make('customer.name'),
+                Tables\Columns\TextColumn::make('warehouse.name')
+                    ->label('Gudang')
+                    ->placeholder('-'),
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
@@ -145,7 +160,8 @@ class DeliveryOrderResource extends Resource
                         'DELIVERED' => 'success',
                         'CANCEL' => 'danger',
                     }),
-                Tables\Columns\TextColumn::make('total_qty'),
+                Tables\Columns\TextColumn::make('total_qty')
+                    ->label('Total Qty'),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
@@ -157,8 +173,22 @@ class DeliveryOrderResource extends Resource
                     ]),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('printPdf')
+                        ->label('Print PDF')
+                        ->icon('heroicon-o-printer')
+                        ->color('info')
+                        ->action(function (DeliveryOrder $record) {
+                            $company = CompanySetting::first();
+                            $pdf = Pdf::loadView('pdf.do', ['do' => $record->load('details.product', 'salesOrder', 'customer', 'creator'), 'company' => $company]);
+                            return response()->streamDownload(function () use ($pdf) {
+                                echo $pdf->output();
+                            }, 'SJ-' . $record->do_number . '.pdf');
+                        }),
+
+                    Tables\Actions\EditAction::make(),
+                    Tables\Actions\DeleteAction::make(),
+                ]),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

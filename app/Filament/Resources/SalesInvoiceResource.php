@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\SalesInvoiceResource\Pages;
+use App\Models\CompanySetting;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\SalesInvoice;
@@ -12,6 +13,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class SalesInvoiceResource extends Resource
 {
@@ -26,7 +28,7 @@ class SalesInvoiceResource extends Resource
     {
         return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('manage_sales_orders');
     }
-	
+
     public static function form(Form $form): Form
     {
         return $form
@@ -54,33 +56,58 @@ class SalesInvoiceResource extends Resource
                             ->label('Customer')
                             ->options(Customer::pluck('name', 'id'))
                             ->searchable()
-                            ->required(),
+                            ->required()
+                            ->live(),
 
+                        // =========================================================
+                        // FIX #1: SO dropdown hanya muncul SO milik customer yang dipilih
+                        // =========================================================
                         Forms\Components\Select::make('so_id')
                             ->label('Sales Order (Opsional)')
-                            ->options(SalesOrder::whereNotIn('status', ['DRAFT', 'CANCEL'])->pluck('so_number', 'id'))
+                            ->options(function (Forms\Get $get) {
+                                $customerId = $get('customer_id');
+                                $query = SalesOrder::whereNotIn('status', ['DRAFT', 'CANCEL']);
+                                if ($customerId) {
+                                    $query->where('customer_id', $customerId);
+                                }
+                                return $query->pluck('so_number', 'id');
+                            })
                             ->searchable()
                             ->live()
                             ->default(fn () => request()->query('so_id'))
                             ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                if ($state) {
-                                    $so = SalesOrder::with('details.product')->find($state);
-                                    if ($so) {
-                                        $set('customer_id', $so->customer_id);
-                                        $details = [];
-                                        foreach ($so->details as $d) {
-                                            if ($d->remaining_qty > 0) {
-                                                $details[] = [
-                                                    'product_id' => $d->product_id,
-                                                    'qty' => $d->remaining_qty,
-                                                    'price' => $d->unit_price,
-                                                    'subtotal' => $d->remaining_qty * $d->unit_price,
-                                                ];
-                                            }
-                                        }
-                                        $set('details', $details);
-                                    }
+                                if (!$state) {
+                                    return;
                                 }
+                                $so = SalesOrder::with('details.product')->find($state);
+                                if (!$so) {
+                                    return;
+                                }
+
+                                $set('customer_id', $so->customer_id);
+
+                                $details = [];
+                                $total = 0;
+                                foreach ($so->details as $d) {
+                                    $qty = $d->qty ?? 0;
+                                    $price = $d->unit_price ?? 0;
+                                    $subtotal = $qty * $price;
+                                    $details[] = [
+                                        'product_id' => $d->product_id,
+                                        'qty'        => $qty,
+                                        'price'      => $price,
+                                        'subtotal'   => $subtotal,
+                                    ];
+                                    $total += $subtotal;
+                                }
+
+                                // =========================================================
+                                // FIX #2: Set detail + total langsung
+                                // =========================================================
+                                $set('details', $details);
+                                $set('total', $total);
+                                $set('paid_amount', 0);
+                                $set('status', 'UNPAID');
                             })
                             ->placeholder('Kosongkan jika faktur tidak dari SO'),
 
@@ -157,18 +184,18 @@ class SalesInvoiceResource extends Resource
                     ->schema([
                         Forms\Components\TextInput::make('total')
                             ->label('Total Faktur')
-							->numeric()
-							->prefix('Rp')
-							->default(0)
-							->disabled()
-							->dehydrated(true),
+                            ->numeric()
+                            ->prefix('Rp')
+                            ->default(0)
+                            ->disabled()
+                            ->dehydrated(true),
 
                         Forms\Components\TextInput::make('paid_amount')
                             ->label('Sudah Dibayar')
                             ->numeric()
                             ->prefix('Rp')
                             ->default(0)
-                            ->live()
+                            ->live(onBlur: true)
                             ->afterStateUpdated(function ($state, Forms\Get $get, Forms\Set $set) {
                                 $total = $get('total') ?? 0;
                                 $paid = $state ?? 0;
@@ -231,13 +258,20 @@ class SalesInvoiceResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make([
-                    Tables\Actions\ViewAction::make(),
-                    Tables\Actions\EditAction::make(),
-                    Tables\Actions\Action::make('print')
+                    Tables\Actions\Action::make('printPdf')
                         ->label('Print PDF')
                         ->icon('heroicon-o-printer')
-                        ->url(fn (SalesInvoice $record): string => url('/invoice/' . $record->id . '/print'))
-                        ->openUrlInNewTab(),
+                        ->color('info')
+                        ->action(function (SalesInvoice $record) {
+                            $company = CompanySetting::first();
+                            $pdf = Pdf::loadView('pdf.invoice', ['invoice' => $record->load('details.product', 'salesOrder', 'customer'), 'company' => $company]);
+                            return response()->streamDownload(function () use ($pdf) {
+                                echo $pdf->output();
+                            }, 'INV-' . $record->invoice_number . '.pdf');
+                        }),
+
+                    Tables\Actions\ViewAction::make(),
+                    Tables\Actions\EditAction::make(),
                     Tables\Actions\DeleteAction::make(),
                 ]),
             ])

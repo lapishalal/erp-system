@@ -43,6 +43,69 @@ class SalesOrderDetail extends Model
         'profit' => 'decimal:2',
     ];
 
+    protected static function booted(): void
+    {
+        // ✅ FIX #1: Update outstanding_stock saat SO detail dibuat
+        static::created(function (self $detail) {
+            self::updateOutstandingStock($detail, $detail->qty);
+            // Set remaining_qty saat create
+            $detail->remaining_qty = $detail->qty;
+            $detail->saveQuietly();
+        });
+
+        // ✅ FIX #1: Adjust outstanding_stock saat SO detail diubah (qty berubah)
+        static::updated(function (self $detail) {
+            if ($detail->isDirty('qty')) {
+                $originalQty = $detail->getOriginal('qty') ?? 0;
+                $delta = $detail->qty - $originalQty;
+                self::updateOutstandingStock($detail, $delta);
+
+                // Adjust remaining_qty juga
+                $detail->remaining_qty = max(0, $detail->qty - ($detail->delivered_qty ?? 0));
+                $detail->saveQuietly();
+            }
+        });
+
+        // ✅ FIX #1: Kembalikan outstanding_stock saat SO detail dihapus
+        static::deleted(function (self $detail) {
+            self::updateOutstandingStock($detail, -$detail->qty);
+        });
+    }
+
+    /**
+     * Update ProductStock.outstanding_stock
+     * delta positif = pesanan bertambah, delta negatif = pesanan berkurang
+     */
+    protected static function updateOutstandingStock(self $detail, int $delta): void
+    {
+        $so = $detail->salesOrder;
+        if (!$so) {
+            return;
+        }
+
+        // Cari warehouse default (gudang 1) atau dari DO terkait
+        // Simplifikasi: outstanding_stock di semua gudang? Atau gudang default?
+        // Logika bisnis: outstanding_stock adalah komitmen penjualan, tidak terikat gudang spesifik.
+        // Tapi di tabel product_stocks ada warehouse_id. Kita update gudang default (id=1) saja.
+        $warehouseId = 1;
+
+        $stock = \App\Models\ProductStock::firstOrCreate(
+            [
+                'product_id' => $detail->product_id,
+                'warehouse_id' => $warehouseId,
+            ],
+            [
+                'physical_stock' => 0,
+                'outstanding_stock' => 0,
+                'available_stock' => 0,
+            ]
+        );
+
+        $stock->outstanding_stock = max(0, $stock->outstanding_stock + $delta);
+        $stock->available_stock = $stock->physical_stock - $stock->outstanding_stock;
+        $stock->save();
+    }
+
     public function salesOrder(): BelongsTo
     {
         return $this->belongsTo(SalesOrder::class, 'so_id');
@@ -52,15 +115,7 @@ class SalesOrderDetail extends Model
     {
         return $this->belongsTo(Product::class, 'product_id');
     }
-    
-    // =========================================================
-    // ACCESSORS
-    // =========================================================
 
-    /**
-     * Pending qty = remaining_qty (jika database sudah maintain dengan benar)
-     * Fallback: hitung manual kalau remaining_qty tidak sync
-     */
     public function getPendingQtyAttribute(): int
     {
         return max(0, (int) $this->remaining_qty);
@@ -70,10 +125,6 @@ class SalesOrderDetail extends Model
     {
         return number_format($this->pending_qty, 0, ',', '.');
     }
-
-    // =========================================================
-    // SCOPES
-    // =========================================================
 
     public function scopePending($query)
     {

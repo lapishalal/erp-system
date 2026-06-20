@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
 
 use App\Traits\BelongsToTenant;
+
 class GoodsReceiptDetail extends Model
 {
     use HasFactory, BelongsToTenant;
@@ -36,19 +37,31 @@ class GoodsReceiptDetail extends Model
 
     protected static function booted(): void
     {
-        // Auto hitung subtotal saat save
         static::saving(function (self $detail) {
             $detail->subtotal = $detail->qty * $detail->buy_price;
         });
 
-        // ✅ Update parent GR total setelah detail tersimpan
-        static::saved(function (self $detail) {
+        static::created(function (self $detail) {
             self::updateParentTotal($detail->gr_id);
+            self::updatePurchaseOrder($detail, $detail->qty);
+            self::updateProductLastBuyPrice($detail);
+            self::updateStock($detail, $detail->qty);
         });
 
-        // ✅ Update parent GR total setelah detail dihapus
+        static::updated(function (self $detail) {
+            $originalQty = $detail->getOriginal('qty') ?? 0;
+            $delta = $detail->qty - $originalQty;
+
+            self::updateParentTotal($detail->gr_id);
+            self::updatePurchaseOrder($detail, $delta);
+            self::updateProductLastBuyPrice($detail);
+            self::updateStock($detail, $delta);
+        });
+
         static::deleted(function (self $detail) {
             self::updateParentTotal($detail->gr_id);
+            self::updatePurchaseOrder($detail, -$detail->qty);
+            self::updateStock($detail, -$detail->qty);
         });
     }
 
@@ -65,6 +78,85 @@ class GoodsReceiptDetail extends Model
         DB::table('goods_receipts')->where('id', $grId)->update([
             'total_qty' => $totals->total_qty ?? 0,
             'total_amount' => $totals->total_amount ?? 0,
+        ]);
+    }
+
+    protected static function updatePurchaseOrder(self $detail, int $delta): void
+    {
+        $gr = $detail->goodsReceipt;
+        if (!$gr || !$gr->po_id) {
+            return;
+        }
+
+        $poDetail = \App\Models\PurchaseOrderDetail::where('po_id', $gr->po_id)
+            ->where('product_id', $detail->product_id)
+            ->first();
+
+        if (!$poDetail) {
+            return;
+        }
+
+        $poDetail->received_qty = max(0, ($poDetail->received_qty ?? 0) + $delta);
+        $poDetail->remaining_qty = max(0, $poDetail->qty - $poDetail->received_qty);
+        $poDetail->save();
+
+        $po = \App\Models\PurchaseOrder::with('details')->find($gr->po_id);
+        if ($po) {
+            $totalRemaining = $po->details->sum('remaining_qty');
+            $totalQty = $po->details->sum('qty');
+
+            if ($totalRemaining == 0 && $totalQty > 0) {
+                $po->status = 'COMPLETE';
+            } elseif ($totalRemaining < $totalQty) {
+                $po->status = 'PARTIAL';
+            }
+            $po->save();
+        }
+    }
+
+    protected static function updateProductLastBuyPrice(self $detail): void
+    {
+        $product = \App\Models\Product::find($detail->product_id);
+        if ($product && $detail->buy_price > 0) {
+            $product->last_buy_price = $detail->buy_price;
+            $product->save();
+        }
+    }
+
+    public static function updateStock(self $detail, int $delta): void
+    {
+        $gr = $detail->goodsReceipt;
+        if (!$gr || !$gr->warehouse_id) {
+            return;
+        }
+
+        $stock = \App\Models\ProductStock::firstOrCreate(
+            [
+                'product_id' => $detail->product_id,
+                'warehouse_id' => $gr->warehouse_id,
+            ],
+            [
+                'physical_stock' => 0,
+                'outstanding_stock' => 0,
+                'available_stock' => 0,
+            ]
+        );
+
+        $qtyBefore = $stock->physical_stock;
+        $stock->physical_stock = max(0, $stock->physical_stock + $delta);
+        $stock->available_stock = max(0, $stock->physical_stock - $stock->outstanding_stock);
+        $stock->save();
+
+        \App\Models\StockMovement::create([
+            'product_id' => $detail->product_id,
+            'warehouse_id' => $gr->warehouse_id,
+            'qty_before' => $qtyBefore,
+            'qty_after' => $stock->physical_stock,
+            'delta' => $stock->physical_stock - $qtyBefore,
+            'type' => 'GR',
+            'reference_type' => self::class,
+            'reference_id' => $detail->gr_id,
+            'notes' => 'Goods Receipt #' . ($gr->gr_number ?? $gr->id),
         ]);
     }
 

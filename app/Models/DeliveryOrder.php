@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Traits\Auditable;
 use App\Traits\BelongsToTenant;
 
-class DeliveryOrder extends Model
+class DeliveryOrder extends Model  // ← HARUS DeliveryOrder
 {
     use HasFactory, Auditable, BelongsToTenant;
 
@@ -18,6 +18,7 @@ class DeliveryOrder extends Model
         'so_id',
         'date',
         'customer_id',
+        'warehouse_id',
         'status',
         'total_qty',
         'notes',
@@ -31,6 +32,43 @@ class DeliveryOrder extends Model
         'total_qty' => 'integer',
     ];
 
+    protected static function booted(): void
+    {
+        static::updated(function (self $do) {
+            if ($do->isDirty('status')) {
+                $oldStatus = $do->getOriginal('status');
+                $newStatus = $do->status;
+
+                $wasShipped = in_array($oldStatus, ['SHIPPED', 'DELIVERED']);
+                $isShipped = in_array($newStatus, ['SHIPPED', 'DELIVERED']);
+
+                if (!$wasShipped && $isShipped) {
+                    $do->load('details');
+                    foreach ($do->details as $detail) {
+                        DeliveryOrderDetail::updateStock($detail, $detail->qty);
+                        DeliveryOrderDetail::updateOutstandingStock($detail, -$detail->qty);
+                    }
+                } elseif ($wasShipped && !$isShipped) {
+                    $do->load('details');
+                    foreach ($do->details as $detail) {
+                        DeliveryOrderDetail::updateStock($detail, -$detail->qty);
+                        DeliveryOrderDetail::updateOutstandingStock($detail, $detail->qty);
+                    }
+                }
+            }
+        });
+
+        static::deleting(function (self $do) {
+            if (in_array($do->status, ['SHIPPED', 'DELIVERED'])) {
+                $do->load('details');
+                foreach ($do->details as $detail) {
+                    DeliveryOrderDetail::updateStock($detail, -$detail->qty);
+                    DeliveryOrderDetail::updateOutstandingStock($detail, $detail->qty);
+                }
+            }
+        });
+    }
+
     public function salesOrder(): BelongsTo
     {
         return $this->belongsTo(SalesOrder::class, 'so_id');
@@ -39,6 +77,11 @@ class DeliveryOrder extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class);
     }
 
     public function details(): HasMany

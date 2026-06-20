@@ -63,6 +63,7 @@ class AdminPanelProvider extends PanelProvider
 				\App\Filament\Resources\PayrollResource::class,
 				\App\Filament\Resources\EmployeeLoanResource::class,
 				\App\Filament\Resources\PayrollResource::class,
+				\App\Filament\Resources\CompanySettingResource::class,
             ])
             ->pages([
                 Pages\Dashboard::class,
@@ -78,6 +79,7 @@ class AdminPanelProvider extends PanelProvider
                 \App\Filament\Widgets\TopBrandsTable::class,
                 \App\Filament\Widgets\TopProductsTable::class,
                 \App\Filament\Widgets\LowStockTable::class,
+                \App\Filament\Widgets\LowStockWidget::class,
             ])
             ->navigationGroups([
                 NavigationGroup::make('Master Data')

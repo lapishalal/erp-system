@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Faktur {{ $invoice->invoice_number }}</title>
+<title>Purchase Order {{ $po->po_number }}</title>
 <style>
 body { font-family: Arial, sans-serif; font-size: 12px; }
 .header { text-align: center; margin-bottom: 20px; }
@@ -19,7 +19,6 @@ body { font-family: Arial, sans-serif; font-size: 12px; }
 .footer-table { width: 100%; }
 .footer-table td { text-align: center; vertical-align: top; padding-top: 60px; }
 .signature-line { border-top: 1px solid #333; width: 150px; margin: 0 auto; padding-top: 5px; }
-.stamp { position: absolute; right: 50px; bottom: 100px; opacity: 0.7; }
 </style>
 </head>
 <body>
@@ -31,42 +30,33 @@ body { font-family: Arial, sans-serif; font-size: 12px; }
     <p>{{ $company?->address ?? '-' }}</p>
     <p>Telp: {{ $company?->phone ?? '-' }} | Email: {{ $company?->email ?? '-' }}</p>
     <hr>
-    <h3 style="margin-top: 10px;">FAKTUR PENJUALAN</h3>
+    <h3 style="margin-top: 10px;">PURCHASE ORDER</h3>
 </div>
 
 <table class="info-table">
-    <tr><td class="label">Nomor Faktur</td><td>: {{ $invoice->invoice_number }}</td><td class="label">Tanggal</td><td>: {{ $invoice->date->format('d M Y') }}</td></tr>
-    <tr><td class="label">SO</td><td>: {{ $invoice->salesOrder?->so_number ?? '-' }}</td><td class="label">Jatuh Tempo</td><td>: {{ $invoice->due_date->format('d M Y') }}</td></tr>
-    <tr><td class="label">Customer</td><td>: {{ $invoice->customer?->name ?? '-' }}</td><td class="label">Status</td><td>: {{ $invoice->status }}</td></tr>
+    <tr><td class="label">Nomor PO</td><td>: {{ $po->po_number }}</td><td class="label">Tanggal</td><td>: {{ $po->date->format('d M Y') }}</td></tr>
+    <tr><td class="label">Supplier</td><td>: {{ $po->supplier?->name ?? '-' }}</td><td class="label">Status</td><td>: {{ $po->status }}</td></tr>
 </table>
 
 <table class="items-table">
     <thead><tr><th>No</th><th>Barang</th><th class="right">Qty</th><th class="right">Harga</th><th class="right">Subtotal</th></tr></thead>
     <tbody>
-        @foreach($invoice->details as $i => $d)
-        <tr><td>{{ $i + 1 }}</td><td>{{ $d->product?->name ?? '-' }}</td><td class="right">{{ number_format($d->qty, 0, ',', '.') }}</td><td class="right">Rp {{ number_format($d->price, 0, ',', '.') }}</td><td class="right">Rp {{ number_format($d->subtotal, 0, ',', '.') }}</td></tr>
+        @foreach($po->details as $i => $d)
+        <tr><td>{{ $i + 1 }}</td><td>{{ $d->product?->name ?? '-' }}</td><td class="right">{{ number_format($d->qty, 0, ',', '.') }}</td><td class="right">Rp {{ number_format($d->unit_price, 0, ',', '.') }}</td><td class="right">Rp {{ number_format($d->subtotal, 0, ',', '.') }}</td></tr>
         @endforeach
     </tbody>
-    <tfoot>
-        <tr><th colspan="4" class="right">Total</th><th class="right">Rp {{ number_format($invoice->total, 0, ',', '.') }}</th></tr>
-        <tr><th colspan="4" class="right">Sudah Dibayar</th><th class="right">Rp {{ number_format($invoice->paid_amount, 0, ',', '.') }}</th></tr>
-        <tr><th colspan="4" class="right">Sisa</th><th class="right">Rp {{ number_format($invoice->total - $invoice->paid_amount, 0, ',', '.') }}</th></tr>
-    </tfoot>
+    <tfoot><tr><th colspan="4" class="right">Total</th><th class="right">Rp {{ number_format($po->total_amount, 0, ',', '.') }}</th></tr></tfoot>
 </table>
 
-<p><strong>Catatan:</strong> {{ $invoice->notes ?? '-' }}</p>
+<p><strong>Catatan:</strong> {{ $po->notes ?? '-' }}</p>
 
 <div class="footer">
     <table class="footer-table">
         <tr>
-            <td><p>Dibuat oleh,</p><div class="signature-line">{{ $invoice->creator?->name ?? '-' }}</div></td>
+            <td><p>Dibuat oleh,</p><div class="signature-line">{{ $po->creator?->name ?? '-' }}</div></td>
             <td><p>Disetujui oleh,</p>@if($company?->signature_image)<img src="{{ public_path('storage/' . $company->signature_image) }}" style="max-height: 50px; margin-bottom: 5px;">@endif<div class="signature-line">{{ $company?->signature_name ?? '.........................' }}</div></td>
         </tr>
     </table>
 </div>
-
-@if($company?->stamp_image)
-<div class="stamp"><img src="{{ public_path('storage/' . $company->stamp_image) }}" style="max-height: 80px;"></div>
-@endif
 </body>
 </html>

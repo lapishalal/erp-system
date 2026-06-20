@@ -6,6 +6,7 @@ use App\Filament\Resources\CashInResource\Pages;
 use App\Models\Account;
 use App\Models\CashIn;
 use App\Models\Customer;
+use App\Models\SalesInvoice;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -25,7 +26,7 @@ class CashInResource extends Resource
     {
         return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('manage_cash_in');
     }
-	
+
     public static function form(Form $form): Form
     {
         return $form
@@ -47,6 +48,31 @@ class CashInResource extends Resource
                     ])
                     ->required()
                     ->reactive(),
+                // =========================================================
+                // DROPDOWN FAKTUR (hanya muncul kalau CUSTOMER_PAYMENT)
+                // =========================================================
+                Forms\Components\Select::make('reference_id')
+                    ->label('Faktur (Opsional)')
+                    ->options(function (Forms\Get $get) {
+                        $customerId = $get('customer_id');
+                        $query = SalesInvoice::whereIn('status', ['UNPAID', 'PARTIAL']);
+                        if ($customerId) {
+                            $query->where('customer_id', $customerId);
+                        }
+                        return $query->pluck('invoice_number', 'id');
+                    })
+                    ->searchable()
+                    ->visible(fn (Forms\Get $get) => $get('type') === 'CUSTOMER_PAYMENT')
+                    ->afterStateUpdated(function ($state, Forms\Set $set) {
+                        if ($state) {
+                            $invoice = SalesInvoice::find($state);
+                            if ($invoice) {
+                                $set('customer_id', $invoice->customer_id);
+                                $set('amount', $invoice->total - $invoice->paid_amount);
+                            }
+                        }
+                    })
+                    ->placeholder('Pilih faktur yang dilunasi'),
                 Forms\Components\Select::make('customer_id')
                     ->label('Customer')
                     ->options(Customer::pluck('name', 'id'))

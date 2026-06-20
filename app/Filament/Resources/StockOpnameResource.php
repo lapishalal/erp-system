@@ -7,11 +7,13 @@ use App\Models\Product;
 use App\Models\ProductStock;
 use App\Models\StockOpname;
 use App\Models\Warehouse;
+use App\Exports\StockOpnameExport;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Maatwebsite\Excel\Facades\Excel;
 
 class StockOpnameResource extends Resource
 {
@@ -26,7 +28,7 @@ class StockOpnameResource extends Resource
     {
         return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('manage_stock_opname');
     }
-	
+
     public static function form(Form $form): Form
     {
         return $form
@@ -80,7 +82,7 @@ class StockOpnameResource extends Resource
                                     ->numeric()
                                     ->required()
                                     ->default(0)
-                                    ->live()
+                                    ->live(onBlur: true)
                                     ->afterStateUpdated(function ($state, $get, Forms\Set $set) {
                                         $system = $get('system_qty') ?? 0;
                                         $set('difference_qty', ($state ?? 0) - $system);
@@ -124,8 +126,24 @@ class StockOpnameResource extends Resource
                     ]),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\ActionGroup::make([
+                    // =========================================================
+                    // EXPORT EXCEL DI TABEL (LIST PAGE)
+                    // =========================================================
+                    Tables\Actions\Action::make('exportExcel')
+                        ->label('Export Excel')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('success')
+                        ->action(function (StockOpname $record) {
+                            return Excel::download(
+                                new StockOpnameExport($record),
+                                'stock-opname-' . $record->id . '-' . $record->opname_date->format('Ymd') . '.xlsx'
+                            );
+                        }),
+
+                    Tables\Actions\EditAction::make(),
+                    Tables\Actions\DeleteAction::make(),
+                ]),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
