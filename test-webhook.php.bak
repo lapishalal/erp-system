@@ -1,0 +1,44 @@
+<?php
+
+$tenantId = '5b273bd4-5ba3-454a-8bcc-192f686d004b';
+$url = "http://127.0.0.1:8000/api/webhook/tiktok/{$tenantId}";
+
+// Pastikan ada produk di ERP dengan sku = "SKU-001"
+$data = [
+    "order_id" => "TT-TEST-" . time(),
+    "order_sn" => "TT-SN-" . time(),
+    "order_status" => "PAID",
+    "data" => [
+        "order_id" => "TT-TEST-" . time(),
+        "buyer_uid" => "buyer-001",
+        "item_list" => [
+            [
+                "sku_id" => "pouchputih",  // <-- harus sama dengan products.sku
+                "quantity" => 2,
+                "sale_price" => 50000
+            ]
+        ]
+    ]
+];
+
+$ch = curl_init($url);
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    'Content-Type: application/json',
+    'X-Event-Type: order_status_update'
+]);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HEADER, true);
+
+$response = curl_exec($ch);
+$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+$headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+
+curl_close($ch);
+
+$header = substr($response, 0, $headerSize);
+$body = substr($response, $headerSize);
+
+echo "HTTP Code: {$httpCode}\n";
+echo "Body: {$body}\n";

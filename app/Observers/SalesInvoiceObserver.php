@@ -19,4 +19,11 @@ class SalesInvoiceObserver
 
         JournalService::journalSalesInvoice($salesInvoice->total, $totalHpp, $salesInvoice->created_by ?? auth()->id());
     }
+    
+    public function updating(SalesInvoice $invoice): void
+    {
+        if ($invoice->isDirty('status') && $invoice->status === 'POSTED') {
+            $invoice->posted_at = now();
+        }
+    }
 }

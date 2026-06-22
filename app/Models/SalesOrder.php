@@ -26,6 +26,7 @@ class SalesOrder extends Model
         'notes',
         'created_by',
         'approved_by',
+		'source',
     ];
 
     protected $casts = [
@@ -35,6 +36,11 @@ class SalesOrder extends Model
         'total_cost' => 'decimal:2',
         'profit' => 'decimal:2',
     ];
+    
+    public function salesInvoices(): HasMany
+    {
+        return $this->hasMany(SalesInvoice::class, 'so_id');
+    }
 
     public function customer(): BelongsTo
     {

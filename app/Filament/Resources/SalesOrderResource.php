@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Actions\CreateDeliveryOrderAction;
 use App\Filament\Resources\SalesOrderResource\Pages;
 use App\Models\CompanySetting;
 use App\Models\Customer;
@@ -200,6 +201,28 @@ class SalesOrderResource extends Resource
                         'COMPLETE' => 'success',
                         'CANCEL' => 'danger',
                     }),
+				Tables\Columns\TextColumn::make('source')
+					->label('Channel')
+					->badge()
+					->color(fn (?string $state): string => match ($state) {
+						'tiktok' => 'danger',
+						'shopee' => 'warning',
+						'offline' => 'success',
+						default => 'gray',
+					})
+					->icon(fn (?string $state): string => match ($state) {
+						'tiktok' => 'heroicon-m-shopping-bag',
+						'shopee' => 'heroicon-m-shopping-cart',
+						default => 'heroicon-m-building-storefront',
+					})
+					->formatStateUsing(fn (?string $state): string => match ($state) {
+						'tiktok' => 'TikTok Shop',
+						'shopee' => 'Shopee',
+						'offline' => 'Offline',
+						default => $state ?? 'Offline',
+					})
+					->sortable()
+					->toggleable(),
                 Tables\Columns\TextColumn::make('total_qty'),
                 Tables\Columns\TextColumn::make('total_amount')
                     ->money('IDR'),
@@ -207,6 +230,7 @@ class SalesOrderResource extends Resource
                     ->money('IDR')
                     ->hidden(fn (): bool => !self::isAdmin()),
             ])
+			
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
@@ -216,6 +240,13 @@ class SalesOrderResource extends Resource
                         'COMPLETE' => 'Complete',
                         'CANCEL' => 'Cancel',
                     ]),
+				Tables\Filters\SelectFilter::make('source')
+					->label('Channel')
+					->options([
+						'offline' => 'Offline',
+						'tiktok' => 'TikTok Shop',
+						'shopee' => 'Shopee',
+					]),
                 Tables\Filters\SelectFilter::make('customer_id')
                     ->relationship('customer', 'name')
                     ->searchable()
@@ -397,6 +428,8 @@ class SalesOrderResource extends Resource
                     Tables\Actions\ViewAction::make(),
                     Tables\Actions\EditAction::make(),
                     Tables\Actions\DeleteAction::make(),
+					// Tombol Create DO khusus marketplace
+					\App\Filament\Actions\CreateDeliveryOrderAction::make(),
                 ]),
             ])
             ->bulkActions([

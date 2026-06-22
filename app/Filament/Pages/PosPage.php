@@ -9,15 +9,18 @@ class PosPage extends Page
     protected static ?string $navigationIcon = 'heroicon-o-shopping-cart';
     protected static ?string $navigationGroup = 'Transaksi Penjualan';
     protected static ?string $navigationLabel = 'POS / Kasir';
+    protected static ?string $title = 'POS / Kasir';
     protected static ?string $slug = 'pos';
     protected static string $view = 'filament.pages.pos-page';
 
+    protected ?string $maxContentWidth = 'full';
+
     public static function shouldRegisterNavigation(): bool
-	{
-		return auth()->check() && (
+    {
+        return auth()->check() && (
             auth()->check() && auth()->user()->hasRole('Admin') 
             || auth()->check() && auth()->user()->hasPermissionTo('manage_pos')
             || auth()->check() && auth()->user()->hasPermissionTo('manage_sales_orders')
         );
-	}
+    }
 }

@@ -9,11 +9,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Traits\Auditable;
 use App\Traits\BelongsToTenant;
 
-class DeliveryOrder extends Model  // ← HARUS DeliveryOrder
+class DeliveryOrder extends Model
 {
     use HasFactory, Auditable, BelongsToTenant;
 
     protected $fillable = [
+        'tenant_id',
         'do_number',
         'so_id',
         'date',
@@ -58,14 +59,23 @@ class DeliveryOrder extends Model  // ← HARUS DeliveryOrder
             }
         });
 
+        // =========================================================
+        // FIX: Saat DO dihapus, restore semua stok & hapus details
+        // =========================================================
         static::deleting(function (self $do) {
-            if (in_array($do->status, ['SHIPPED', 'DELIVERED'])) {
-                $do->load('details');
-                foreach ($do->details as $detail) {
-                    DeliveryOrderDetail::updateStock($detail, -$detail->qty);
-                    DeliveryOrderDetail::updateOutstandingStock($detail, $detail->qty);
-                }
+            $do->load('details');
+            foreach ($do->details as $detail) {
+                // Kembalikan remaining_qty ke Sales Order
+                DeliveryOrderDetail::updateSalesOrderDetail($detail, -$detail->qty);
+
+                // Kembalikan stok fisik ke gudang
+                DeliveryOrderDetail::updateStock($detail, -$detail->qty);
+
+                // Kembalikan outstanding_stock
+                DeliveryOrderDetail::updateOutstandingStock($detail, $detail->qty);
             }
+            // Hapus semua detail (tanpa trigger event, sudah di-restore di atas)
+            $do->details()->delete();
         });
     }
 

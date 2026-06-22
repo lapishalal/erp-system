@@ -24,32 +24,37 @@ use Illuminate\Support\Facades\DB;
 class PosController extends Controller
 {
     public function getProducts(Request $request)
-    {
-        $search = $request->get('search');
+{
+    $search = $request->get('search');
+    $category = $request->get('category');
 
-        $products = Product::with(['stock'])
-            ->where('is_active', true)
-            ->when($search, function ($query) use ($search) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
-                      ->orWhere('code', 'like', "%{$search}%");
-                });
-            })
-            ->limit(20)
-            ->get()
-            ->map(function ($product) {
-                return [
-                    'id' => $product->id,
-                    'code' => $product->code,
-                    'name' => $product->name,
-                    'price' => $product->default_sale_price,
-                    'stock' => $product->stock?->available_stock ?? 0,
-                    'image' => $product->avatar ?? null,
-                ];
+    $products = Product::with(['stock'])
+        ->where('is_active', true)
+        ->when($search, function ($query) use ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('code', 'like', "%{$search}%");
             });
+        })
+        ->when($category && $category !== 'all', function ($query) use ($category) {
+            $query->where('category_id', $category);
+        })
+        ->limit(20)
+        ->get()
+        ->map(function ($product) {
+            return [
+                'id' => $product->id,
+                'code' => $product->code,
+                'name' => $product->name,
+                'price' => $product->default_sale_price,
+                'stock' => $product->stock?->available_stock ?? 0,
+                'image' => $product->avatar ?? null,
+                'category_id' => $product->category_id, // <-- tambahkan ini
+            ];
+        });
 
-        return response()->json($products);
-    }
+    return response()->json($products);
+}
 
     public function checkout(Request $request)
     {

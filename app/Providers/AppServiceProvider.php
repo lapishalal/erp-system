@@ -7,11 +7,14 @@ use App\Models\CashOut;
 use App\Models\DeliveryOrder;
 use App\Models\GoodsReceipt;
 use App\Models\SalesInvoice;
+use App\Models\SalesOrder;
+use App\Observers\SalesOrderObserver;
 use App\Observers\CashInObserver;
 use App\Observers\CashOutObserver;
 use App\Observers\DeliveryOrderObserver;
 use App\Observers\GoodsReceiptObserver;
 use App\Observers\SalesInvoiceObserver;
+use App\Observers\SalesOrderTimelineObserver;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -20,7 +23,8 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        $this->app->singleton(MarketplaceDeliveryOrderCreator::class);
+		$this->app->singleton(MarketplaceOrderProcessor::class);
     }
     
     public static function canAccess(): bool
@@ -30,11 +34,13 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        //SalesOrder::observe(SalesOrderObserver::class);
         DeliveryOrder::observe(DeliveryOrderObserver::class);
         GoodsReceipt::observe(GoodsReceiptObserver::class);
         SalesInvoice::observe(SalesInvoiceObserver::class);
         CashIn::observe(CashInObserver::class);
         CashOut::observe(CashOutObserver::class);
+        SalesOrder::observe(\App\Observers\SalesOrderTimelineObserver::class);
 
         // Hide navigation items based on permission
         if (Auth::check()) {

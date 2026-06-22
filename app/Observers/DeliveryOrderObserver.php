@@ -10,14 +10,32 @@ use App\Models\SalesOrder;
 use App\Models\SalesOrderDetail;
 use App\Services\JournalService;
 use App\Services\StockService;
+use App\Jobs\SyncStockToMarketplace;
 
 class DeliveryOrderObserver
 {
     public function created(DeliveryOrder $deliveryOrder): void
     {
+		$deliveryOrder->load('details');
+		
         // When DO is created (draft), reserve outstanding
         foreach ($deliveryOrder->details as $detail) {
             StockService::addOutstanding($detail->product_id, 1, $detail->qty);
+			SyncStockToMarketplace::dispatch(
+                $detail->product_id,
+                $deliveryOrder->tenant_id
+            );
+        }
+    }
+    
+    public function updating(DeliveryOrder $do): void
+    {
+        if ($do->isDirty('status')) {
+            match($do->status) {
+                'SHIPPED' => $do->shipped_at = now(),
+                'DELIVERED' => $do->delivered_at = now(),
+                default => null,
+            };
         }
     }
 

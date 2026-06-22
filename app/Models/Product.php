@@ -27,6 +27,7 @@ class Product extends Model
         'description',
         'is_active',
         'created_by',
+		'sku',
     ];
 
     protected $casts = [

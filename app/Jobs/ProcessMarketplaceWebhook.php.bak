@@ -1,0 +1,177 @@
+<?php
+
+namespace App\Jobs;
+
+use App\Enums\MarketplacePlatform;
+use App\Models\MarketplaceConnection;
+use App\Models\MarketplaceLog;
+use App\Models\MarketplaceOrder;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Stancl\Tenancy\Facades\Tenancy;
+
+class ProcessMarketplaceWebhook implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public int $tries = 3;
+    public array $backoff = [60, 300, 600]; // retry 1 menit, 5 menit, 10 menit
+
+    public function __construct(
+        public string $tenantId,
+        public MarketplacePlatform $platform,
+        public string $eventType,
+        public array $payload
+    ) {}
+
+    public function handle(): void
+    {
+        $tenant = \App\Models\Tenant::find($this->tenantId);
+
+        if (!$tenant) {
+            Log::warning("ProcessWebhook: Tenant not found", ['tenant_id' => $this->tenantId]);
+            return;
+        }
+
+        Tenancy::initialize($tenant);
+
+        try {
+            DB::transaction(function () {
+                match ($this->platform) {
+                    MarketplacePlatform::TIKTOK => $this->processTikTok(),
+                    MarketplacePlatform::SHOPEE => $this->processShopee(),
+                };
+            });
+
+            // Update log jika ada
+            MarketplaceLog::where('tenant_id', $this->tenantId)
+                ->where('platform', $this->platform)
+                ->where('event_type', $this->eventType)
+                ->where('payload', json_encode($this->payload))
+                ->latest()
+                ->first()
+                ?->update([
+                    'response' => ['status' => 'processed', 'job_id' => $this->job->uuid() ?? null],
+                    'is_success' => true,
+                ]);
+
+        } catch (\Throwable $e) {
+            Log::error("ProcessWebhook failed", [
+                'tenant_id' => $this->tenantId,
+                'platform' => $this->platform->value,
+                'event' => $this->eventType,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            // Update log error
+            MarketplaceLog::where('tenant_id', $this->tenantId)
+                ->where('platform', $this->platform)
+                ->where('event_type', $this->eventType)
+                ->where('payload', json_encode($this->payload))
+                ->latest()
+                ->first()
+                ?->update([
+                    'response' => ['status' => 'failed', 'error' => $e->getMessage()],
+                    'is_success' => false,
+                    'error_message' => $e->getMessage(),
+                ]);
+
+            throw $e; // trigger retry
+        } finally {
+            Tenancy::end();
+        }
+    }
+
+    private function processTikTok(): void
+    {
+        // TikTok webhook structure (disesuaikan saat integrasi API nyata)
+        $orderId = $this->payload['order_id'] 
+            ?? $this->payload['data']['order_id'] 
+            ?? null;
+
+        if (!$orderId) {
+            Log::info("TikTok webhook: no order_id", ['payload' => $this->payload]);
+            return;
+        }
+
+        // Idempotency: cek sudah ada?
+        $exists = MarketplaceOrder::where('tenant_id', $this->tenantId)
+            ->where('platform', MarketplacePlatform::TIKTOK)
+            ->where('platform_order_id', $orderId)
+            ->exists();
+
+        if ($exists) {
+            Log::info("TikTok order already exists", ['order_id' => $orderId]);
+            return;
+        }
+
+        // Simpan sebagai marketplace order (belum jadi SO)
+        // Nanti di STEP 3 kita buat mapping ke SO
+        MarketplaceOrder::create([
+            'tenant_id' => $this->tenantId,
+            'connection_id' => $this->getConnectionId(),
+            'platform' => MarketplacePlatform::TIKTOK,
+            'platform_order_id' => $orderId,
+            'platform_order_sn' => $this->payload['order_sn'] ?? $orderId,
+            'status' => $this->payload['order_status'] ?? 'pending',
+            'synced_at' => now(),
+            'raw_payload' => $this->payload,
+            'is_mapped' => false,
+        ]);
+
+        Log::info("TikTok order saved", ['order_id' => $orderId]);
+    }
+
+    private function processShopee(): void
+    {
+        // Shopee webhook structure
+        $data = $this->payload['data'] ?? $this->payload;
+        $orderSn = $data['ordersn'] 
+            ?? $data['order_sn'] 
+            ?? $data['order_id'] 
+            ?? null;
+
+        if (!$orderSn) {
+            Log::info("Shopee webhook: no order_sn", ['payload' => $this->payload]);
+            return;
+        }
+
+        $exists = MarketplaceOrder::where('tenant_id', $this->tenantId)
+            ->where('platform', MarketplacePlatform::SHOPEE)
+            ->where('platform_order_id', $orderSn)
+            ->exists();
+
+        if ($exists) {
+            Log::info("Shopee order already exists", ['order_sn' => $orderSn]);
+            return;
+        }
+
+        MarketplaceOrder::create([
+            'tenant_id' => $this->tenantId,
+            'connection_id' => $this->getConnectionId(),
+            'platform' => MarketplacePlatform::SHOPEE,
+            'platform_order_id' => $orderSn,
+            'platform_order_sn' => $orderSn,
+            'status' => $data['status'] ?? 'pending',
+            'synced_at' => now(),
+            'raw_payload' => $this->payload,
+            'is_mapped' => false,
+        ]);
+
+        Log::info("Shopee order saved", ['order_sn' => $orderSn]);
+    }
+
+    private function getConnectionId(): ?int
+    {
+        return MarketplaceConnection::where('tenant_id', $this->tenantId)
+            ->where('platform', $this->platform)
+            ->where('is_active', true)
+            ->value('id');
+    }
+}

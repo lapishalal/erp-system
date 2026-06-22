@@ -3,18 +3,18 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\DeliveryOrderResource\Pages;
-use App\Models\CompanySetting;
 use App\Models\Customer;
 use App\Models\DeliveryOrder;
-use App\Models\Product;
-use App\Models\SalesOrder;
+use App\Models\ProductStock;
+use App\Models\SalesOrderDetail;
 use App\Models\Warehouse;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
+use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Barryvdh\DomPDF\Facade\Pdf;
 
 class DeliveryOrderResource extends Resource
 {
@@ -29,6 +29,74 @@ class DeliveryOrderResource extends Resource
     {
         return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('manage_delivery_orders');
     }
+    
+        // Tambahkan method ini di class DeliveryOrderResource
+    private static function hydrateDisplayFields(Set $set, Get $get, array $state): void
+    {
+        $warehouseId = $get('warehouse_id');
+        foreach ($state ?? [] as $key => $item) {
+            $soDetail = SalesOrderDetail::with(['product', 'salesOrder'])->find($item['so_detail_id'] ?? null);
+            $stock = ProductStock::where('product_id', $item['product_id'] ?? null)
+                ->where('warehouse_id', $warehouseId)
+                ->first();
+
+            $remaining = $soDetail?->remaining_qty ?? 0;
+            $stockQty = $stock?->available_stock ?? 0;
+            $qty = $item['qty'] ?? 0;
+
+            $set("details.{$key}.so_number", $soDetail?->salesOrder?->so_number ?? '-');
+            $set("details.{$key}.product_name", $soDetail?->product?->name ?? '-');
+            $set("details.{$key}.remaining_qty", $remaining);
+            $set("details.{$key}.available_stock", $stockQty);
+            $set("details.{$key}.remaining_after", max(0, $remaining - $qty));
+            $set("details.{$key}.stock_after", max(0, $stockQty - $qty));
+        }
+    }
+
+    private static function loadPendingItems(?int $customerId, ?int $warehouseId, Set $set, $livewire): void
+    {
+        if (!$customerId || !$warehouseId) {
+            $set('details', []);
+            $set('total_qty', 0);
+            return;
+        }
+
+        if (!($livewire instanceof \Filament\Resources\Pages\CreateRecord)) {
+            return;
+        }
+
+        $details = SalesOrderDetail::whereHas('salesOrder', function ($q) use ($customerId) {
+                $q->where('customer_id', $customerId)
+                  ->whereIn('status', ['OPEN', 'PARTIAL']);
+            })
+            ->where('remaining_qty', '>', 0)
+            ->with(['product', 'salesOrder'])
+            ->orderBy('created_at')
+            ->get();
+
+        $data = [];
+        foreach ($details as $d) {
+            $stock = ProductStock::where('product_id', $d->product_id)
+                ->where('warehouse_id', $warehouseId)
+                ->first();
+
+            $data[] = [
+                'so_detail_id' => $d->id,
+                'product_id' => $d->product_id,
+                'so_number' => $d->salesOrder->so_number,
+                'product_name' => $d->product->name,
+                'remaining_qty' => $d->remaining_qty,
+                'available_stock' => $stock ? $stock->available_stock : 0,
+                'qty' => 0,
+                'remaining_after' => $d->remaining_qty,
+                'stock_after' => $stock ? $stock->available_stock : 0,
+                'notes' => null,
+            ];
+        }
+
+        $set('details', $data);
+        $set('total_qty', 0);
+    }
 
     public static function form(Form $form): Form
     {
@@ -42,47 +110,34 @@ class DeliveryOrderResource extends Resource
                             ->unique(ignoreRecord: true)
                             ->default(fn () => 'SJ-' . date('Ymd') . '-' . rand(1000, 9999))
                             ->maxLength(50),
+
                         Forms\Components\DatePicker::make('date')
                             ->label('Tanggal')
                             ->required()
                             ->default(now()),
-                        Forms\Components\Select::make('so_id')
-                            ->label('Sales Order')
-                            ->options(SalesOrder::whereIn('status', ['OPEN', 'PARTIAL'])->pluck('so_number', 'id'))
-                            ->searchable()
-                            ->required()
-                            ->reactive()
-                            ->default(fn () => request()->query('so_id'))
-                            ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                $so = SalesOrder::with('details.product')->find($state);
-                                if ($so) {
-                                    $set('customer_id', $so->customer_id);
-                                    $details = [];
-                                    foreach ($so->details as $d) {
-                                        if ($d->remaining_qty > 0) {
-                                            $details[] = [
-                                                'product_id' => $d->product_id,
-                                                'max_qty' => $d->remaining_qty,
-                                                'qty' => 0,
-                                            ];
-                                        }
-                                    }
-                                    $set('details', $details);
-                                }
-                            }),
+
                         Forms\Components\Select::make('customer_id')
                             ->label('Customer')
                             ->options(Customer::pluck('name', 'id'))
                             ->searchable()
                             ->required()
-                            ->disabled()
-                            ->dehydrated(true),
+                            ->live()
+                            ->afterStateUpdated(function ($state, Set $set, Get $get, $livewire) {
+                                self::loadPendingItems($state, $get('warehouse_id'), $set, $livewire);
+                            })
+                            ->disabled(fn (string $operation): bool => $operation === 'edit'),
+
                         Forms\Components\Select::make('warehouse_id')
-                            ->label('Gudang Asal')
+                            ->label('Gudang')
                             ->options(Warehouse::pluck('name', 'id'))
                             ->searchable()
                             ->required()
-                            ->default(fn () => Warehouse::first()?->id),
+                            ->live()
+                            ->afterStateUpdated(function ($state, Set $set, Get $get, $livewire) {
+                                self::loadPendingItems($get('customer_id'), $state, $set, $livewire);
+                            })
+                            ->disabled(fn (string $operation): bool => $operation === 'edit'),
+
                         Forms\Components\Select::make('status')
                             ->label('Status')
                             ->options([
@@ -92,47 +147,128 @@ class DeliveryOrderResource extends Resource
                                 'CANCEL' => 'Batal',
                             ])
                             ->default('DRAFT')
-                            ->required()
-                            ->live(),
+                            ->required(),
+
                         Forms\Components\TextInput::make('driver')
                             ->label('Driver'),
+
                         Forms\Components\TextInput::make('vehicle')
                             ->label('Kendaraan'),
+
                         Forms\Components\Textarea::make('notes')
                             ->label('Catatan')
                             ->columnSpanFull(),
                     ])->columns(2),
 
-                Forms\Components\Section::make('Detail Barang')
+                Forms\Components\Section::make('Detail Barang dari Sales Order')
+                    ->visible(fn (Get $get) => filled($get('customer_id')) && filled($get('warehouse_id')))
                     ->schema([
                         Forms\Components\Repeater::make('details')
                             ->relationship('details')
+                            ->afterStateHydrated(function (Set $set, Get $get, $state) {
+                                self::hydrateDisplayFields($set, $get, $state);
+                            })
                             ->schema([
-                                Forms\Components\Select::make('product_id')
-                                    ->label('Barang')
-                                    ->options(Product::pluck('name', 'id'))
-                                    ->searchable()
-                                    ->required()
+                                Forms\Components\Hidden::make('so_detail_id'),
+                                Forms\Components\Hidden::make('product_id'),
+
+                                Forms\Components\TextInput::make('so_number')
+                                    ->label('No. SO')
                                     ->disabled()
-                                    ->dehydrated(true),
-                                Forms\Components\TextInput::make('max_qty')
+                                    ->dehydrated(false),
+
+                                Forms\Components\TextInput::make('product_name')
+                                    ->label('Barang')
+                                    ->disabled()
+                                    ->dehydrated(false),
+
+                                Forms\Components\TextInput::make('remaining_qty')
                                     ->label('Sisa Order')
                                     ->numeric()
                                     ->disabled()
                                     ->dehydrated(false),
-                                Forms\Components\TextInput::make('qty')
-                                    ->label('Qty Kirim')
+
+                                Forms\Components\TextInput::make('available_stock')
+                                    ->label('Stok Gudang')
                                     ->numeric()
-                                    ->required()
-                                    ->minValue(1)
-                                    ->disabled(fn (Forms\Get $get) => in_array($get('../../status'), ['SHIPPED', 'DELIVERED'])),
+                                    ->disabled()
+                                    ->dehydrated(false)
+                                    ->hint(function (Get $get) {
+                                        $remaining = (int) ($get('remaining_qty') ?? 0);
+                                        $stock = (int) ($get('available_stock') ?? 0);
+                                        if ($stock < $remaining && $stock > 0) {
+                                            return 'Stok tidak cukup!';
+                                        }
+                                        return null;
+                                    })
+                                    ->hintColor('danger'),
+
+                                Forms\Components\TextInput::make('qty')
+                                    ->label('Jumlah Kirim')
+                                    ->numeric()
+                                    ->default(0)
+                                    ->minValue(0)
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                        $qty = (int) ($state ?? 0);
+                                        $remaining = (int) ($get('remaining_qty') ?? 0);
+                                        $stock = (int) ($get('available_stock') ?? 0);
+
+                                        $set('remaining_after', max(0, $remaining - $qty));
+                                        $set('stock_after', max(0, $stock - $qty));
+                                    })
+                                    ->hint(function (Get $get) {
+                                        $remaining = (int) ($get('remaining_qty') ?? 0);
+                                        $stock = (int) ($get('available_stock') ?? 0);
+                                        $max = min($remaining, $stock);
+                                        return "Max: {$max} unit";
+                                    }),
+
+                                Forms\Components\TextInput::make('remaining_after')
+                                    ->label('Sisa Setelah Kirim')
+                                    ->numeric()
+                                    ->disabled()
+                                    ->dehydrated(false)
+                                    ->suffix(function (?int $state): string {
+                                        return ($state !== null && $state <= 0) ? '✅' : '';
+                                    }),
+
+                                Forms\Components\TextInput::make('stock_after')
+                                    ->label('Stok Setelah Kirim')
+                                    ->numeric()
+                                    ->disabled()
+                                    ->dehydrated(false)
+                                    ->suffix(function (?int $state): string {
+                                        if ($state === null) return '';
+                                        if ($state < 0) return '❌';
+                                        if ($state == 0) return '⚠️';
+                                        return '';
+                                    }),
+
                                 Forms\Components\Textarea::make('notes')
-                                    ->label('Catatan'),
+                                    ->label('Catatan')
+                                    ->columnSpanFull(),
                             ])
                             ->columns(4)
-                            ->addable(fn (Forms\Get $get) => !in_array($get('status'), ['SHIPPED', 'DELIVERED']))
-                            ->deletable(fn (Forms\Get $get) => !in_array($get('status'), ['SHIPPED', 'DELIVERED']))
-                            ->reorderable(false),
+                            ->addable(false)
+                            ->deletable(false)
+                            ->reorderable(false)
+                            ->afterStateUpdated(function ($state, Set $set) {
+                                $total = 0;
+                                foreach ($state ?? [] as $item) {
+                                    $total += (int) ($item['qty'] ?? 0);
+                                }
+                                $set('total_qty', $total);
+                            }),
+                    ]),
+
+                Forms\Components\Section::make('Ringkasan')
+                    ->schema([
+                        Forms\Components\TextInput::make('total_qty')
+                            ->label('Total Qty')
+                            ->numeric()
+                            ->disabled()
+                            ->dehydrated(true),
                     ]),
             ]);
     }
@@ -146,12 +282,10 @@ class DeliveryOrderResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('date')
                     ->date('d M Y'),
-                Tables\Columns\TextColumn::make('salesOrder.so_number')
-                    ->label('SO'),
-                Tables\Columns\TextColumn::make('customer.name'),
+                Tables\Columns\TextColumn::make('customer.name')
+                    ->label('Customer'),
                 Tables\Columns\TextColumn::make('warehouse.name')
-                    ->label('Gudang')
-                    ->placeholder('-'),
+                    ->label('Gudang'),
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
@@ -160,8 +294,7 @@ class DeliveryOrderResource extends Resource
                         'DELIVERED' => 'success',
                         'CANCEL' => 'danger',
                     }),
-                Tables\Columns\TextColumn::make('total_qty')
-                    ->label('Total Qty'),
+                Tables\Columns\TextColumn::make('total_qty'),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
@@ -171,24 +304,20 @@ class DeliveryOrderResource extends Resource
                         'DELIVERED' => 'Terkirim',
                         'CANCEL' => 'Batal',
                     ]),
+                Tables\Filters\SelectFilter::make('customer_id')
+                    ->label('Customer')
+                    ->relationship('customer', 'name')
+                    ->searchable()
+                    ->preload(),
+                Tables\Filters\SelectFilter::make('warehouse_id')
+                    ->label('Gudang')
+                    ->relationship('warehouse', 'name')
+                    ->searchable()
+                    ->preload(),
             ])
             ->actions([
-                Tables\Actions\ActionGroup::make([
-                    Tables\Actions\Action::make('printPdf')
-                        ->label('Print PDF')
-                        ->icon('heroicon-o-printer')
-                        ->color('info')
-                        ->action(function (DeliveryOrder $record) {
-                            $company = CompanySetting::first();
-                            $pdf = Pdf::loadView('pdf.do', ['do' => $record->load('details.product', 'salesOrder', 'customer', 'creator'), 'company' => $company]);
-                            return response()->streamDownload(function () use ($pdf) {
-                                echo $pdf->output();
-                            }, 'SJ-' . $record->do_number . '.pdf');
-                        }),
-
-                    Tables\Actions\EditAction::make(),
-                    Tables\Actions\DeleteAction::make(),
-                ]),
+                Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

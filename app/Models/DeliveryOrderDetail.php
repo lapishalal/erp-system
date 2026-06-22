@@ -6,17 +6,18 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
-
 use App\Traits\BelongsToTenant;
 
-class DeliveryOrderDetail extends Model  // ← HARUS DeliveryOrderDetail
+class DeliveryOrderDetail extends Model
 {
     use HasFactory, BelongsToTenant;
 
     protected $table = 'delivery_order_details';
 
     protected $fillable = [
+        'tenant_id',
         'do_id',
+        'so_detail_id',
         'product_id',
         'qty',
         'notes',
@@ -57,15 +58,20 @@ class DeliveryOrderDetail extends Model  // ← HARUS DeliveryOrderDetail
             }
         });
 
+        // =========================================================
+        // FIX: Saat detail dihapus, restore semua stok (apapun status DO)
+        // =========================================================
         static::deleted(function (self $detail) {
             self::updateParentTotal($detail->do_id);
+
+            // Kembalikan remaining_qty ke Sales Order
             self::updateSalesOrderDetail($detail, -$detail->qty);
 
-            $do = $detail->deliveryOrder;
-            if ($do && in_array($do->status, ['SHIPPED', 'DELIVERED'])) {
-                self::updateStock($detail, -$detail->qty);
-                self::updateOutstandingStock($detail, $detail->qty);
-            }
+            // Kembalikan stok fisik ke gudang (apapun status)
+            self::updateStock($detail, -$detail->qty);
+
+            // Kembalikan outstanding_stock
+            self::updateOutstandingStock($detail, $detail->qty);
         });
     }
 
@@ -84,6 +90,18 @@ class DeliveryOrderDetail extends Model  // ← HARUS DeliveryOrderDetail
 
     protected static function updateSalesOrderDetail(self $detail, int $delta): void
     {
+        if ($detail->so_detail_id) {
+            $soDetail = \App\Models\SalesOrderDetail::find($detail->so_detail_id);
+            if ($soDetail) {
+                $soDetail->delivered_qty = max(0, ($soDetail->delivered_qty ?? 0) + $delta);
+                $soDetail->remaining_qty = max(0, $soDetail->qty - $soDetail->delivered_qty);
+                $soDetail->saveQuietly();
+
+                self::updateSalesOrderStatus($soDetail->salesOrder);
+                return;
+            }
+        }
+
         $do = $detail->deliveryOrder;
         if (!$do || !$do->so_id) {
             return;
@@ -99,12 +117,38 @@ class DeliveryOrderDetail extends Model  // ← HARUS DeliveryOrderDetail
 
         $soDetail->delivered_qty = max(0, ($soDetail->delivered_qty ?? 0) + $delta);
         $soDetail->remaining_qty = max(0, $soDetail->qty - $soDetail->delivered_qty);
-        $soDetail->save();
+        $soDetail->saveQuietly();
+
+        self::updateSalesOrderStatus($soDetail->salesOrder);
+    }
+
+    protected static function updateSalesOrderStatus(?\App\Models\SalesOrder $salesOrder): void
+    {
+        if (!$salesOrder) return;
+
+        $salesOrder->load('details');
+        $totalQty = (int) $salesOrder->details->sum('qty');
+        $totalRemaining = (int) $salesOrder->details->sum('remaining_qty');
+        $totalDelivered = (int) $salesOrder->details->sum('delivered_qty');
+
+        if ($totalQty <= 0) return;
+
+        if ($totalRemaining <= 0 && $totalDelivered >= $totalQty) {
+            $newStatus = 'COMPLETE';
+        } elseif ($totalDelivered > 0) {
+            $newStatus = 'PARTIAL';
+        } else {
+            $newStatus = 'OPEN';
+        }
+
+        if ($salesOrder->status !== $newStatus) {
+            $salesOrder->updateQuietly(['status' => $newStatus]);
+        }
     }
 
     protected static function updateOutstandingStock(self $detail, int $delta): void
     {
-        $warehouseId = 1;
+        $warehouseId = $detail->deliveryOrder?->warehouse_id ?? 1;
 
         $stock = \App\Models\ProductStock::where('product_id', $detail->product_id)
             ->where('warehouse_id', $warehouseId)
@@ -164,5 +208,10 @@ class DeliveryOrderDetail extends Model  // ← HARUS DeliveryOrderDetail
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function salesOrderDetail(): BelongsTo
+    {
+        return $this->belongsTo(SalesOrderDetail::class, 'so_detail_id');
     }
 }

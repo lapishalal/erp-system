@@ -1,0 +1,444 @@
+<?php
+
+namespace App\Filament\Resources;
+
+use App\Filament\Actions\CreateDeliveryOrderAction;
+use App\Filament\Resources\SalesOrderResource\Pages;
+use App\Models\CompanySetting;
+use App\Models\Customer;
+use App\Models\DeliveryOrder;
+use App\Models\Product;
+use App\Models\ProductStock;
+use App\Models\SalesInvoice;
+use App\Models\SalesOrder;
+use App\Models\Warehouse;
+use Filament\Forms;
+use Filament\Forms\Form;
+use Filament\Notifications\Notification;
+use Filament\Resources\Resource;
+use Filament\Tables;
+use Filament\Tables\Table;
+use Barryvdh\DomPDF\Facade\Pdf;
+
+class SalesOrderResource extends Resource
+{
+    protected static ?string $model = SalesOrder::class;
+    protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
+    protected static ?string $navigationGroup = 'Transaksi Penjualan';
+    protected static ?string $navigationLabel = 'Sales Order';
+    protected static ?string $modelLabel = 'Sales Order';
+    protected static ?string $pluralModelLabel = 'Sales Order';
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('manage_sales_orders');
+    }
+
+    private static function isAdmin(): bool
+    {
+        return auth()->check() && auth()->user()->hasRole('Admin');
+    }
+
+    public static function form(Form $form): Form
+    {
+        return $form
+            ->schema([
+                Forms\Components\Section::make('Informasi SO')
+                    ->schema([
+                        Forms\Components\TextInput::make('so_number')
+                            ->label('Nomor SO')
+                            ->required()
+                            ->unique(ignoreRecord: true)
+                            ->default(fn () => 'SO-' . date('Ymd') . '-' . rand(1000, 9999))
+                            ->maxLength(50),
+                        Forms\Components\DatePicker::make('date')
+                            ->label('Tanggal')
+                            ->required()
+                            ->default(now()),
+                        Forms\Components\Select::make('customer_id')
+                            ->label('Customer')
+                            ->options(Customer::pluck('name', 'id'))
+                            ->searchable()
+                            ->required(),
+                        Forms\Components\Select::make('status')
+                            ->label('Status')
+                            ->options([
+                                'DRAFT' => 'Draft',
+                                'OPEN' => 'Open',
+                                'PARTIAL' => 'Partial',
+                                'COMPLETE' => 'Complete',
+                                'CANCEL' => 'Cancel',
+                            ])
+                            ->default('DRAFT')
+                            ->required(),
+                        Forms\Components\Textarea::make('notes')
+                            ->label('Catatan')
+                            ->columnSpanFull(),
+                    ])->columns(2),
+
+                Forms\Components\Section::make('Detail Barang')
+                    ->schema([
+                        Forms\Components\Repeater::make('details')
+                            ->relationship('details')
+                            ->schema([
+                                Forms\Components\Select::make('product_id')
+                                    ->label('Barang')
+                                    ->options(Product::pluck('name', 'id'))
+                                    ->searchable()
+                                    ->required()
+                                    ->reactive()
+                                    ->afterStateUpdated(function ($state, Forms\Set $set) {
+                                        $product = Product::find($state);
+                                        if ($product) {
+                                            $set('unit_price', $product->default_sale_price);
+                                            $set('cost_price', $product->last_buy_price);
+                                        }
+                                    }),
+                                Forms\Components\TextInput::make('qty')
+                                    ->label('Qty')
+                                    ->numeric()
+                                    ->required()
+                                    ->default(1)
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(function ($state, $get, Forms\Set $set) {
+                                        $price = $get('unit_price') ?? 0;
+                                        $set('subtotal', ($state ?? 0) * $price);
+                                    }),
+                                Forms\Components\TextInput::make('unit_price')
+                                    ->label('Harga Satuan')
+                                    ->numeric()
+                                    ->prefix('Rp')
+                                    ->required()
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(function ($state, $get, Forms\Set $set) {
+                                        $qty = $get('qty') ?? 0;
+                                        $set('subtotal', $qty * ($state ?? 0));
+                                    }),
+                                Forms\Components\TextInput::make('cost_price')
+                                    ->label('HPP')
+                                    ->numeric()
+                                    ->prefix('Rp')
+                                    ->disabled()
+                                    ->dehydrated(true)
+                                    ->hidden(fn (): bool => !self::isAdmin()),
+                                Forms\Components\TextInput::make('subtotal')
+                                    ->label('Subtotal')
+                                    ->numeric()
+                                    ->prefix('Rp')
+                                    ->disabled()
+                                    ->dehydrated(true),
+                            ])
+                            ->columns(5)
+                            ->addActionLabel('Tambah Barang')
+                            ->live()
+                            ->afterStateUpdated(function ($state, Forms\Set $set) {
+                                $totalQty = 0;
+                                $totalAmount = 0;
+                                $totalCost = 0;
+                                foreach ($state ?? [] as $item) {
+                                    $qty = $item['qty'] ?? 0;
+                                    $price = $item['unit_price'] ?? 0;
+                                    $cost = $item['cost_price'] ?? 0;
+                                    $totalQty += $qty;
+                                    $totalAmount += $qty * $price;
+                                    $totalCost += $qty * $cost;
+                                }
+                                $set('total_qty', $totalQty);
+                                $set('total_amount', $totalAmount);
+                                $set('total_cost', $totalCost);
+                                $set('profit', $totalAmount - $totalCost);
+                            }),
+                    ]),
+
+                Forms\Components\Section::make('Ringkasan')
+                    ->schema([
+                        Forms\Components\TextInput::make('total_qty')
+                            ->label('Total Qty')
+                            ->numeric()
+                            ->disabled()
+                            ->dehydrated(true),
+                        Forms\Components\TextInput::make('total_amount')
+                            ->label('Total Omset')
+                            ->numeric()
+                            ->prefix('Rp')
+                            ->disabled()
+                            ->dehydrated(true),
+                        Forms\Components\TextInput::make('total_cost')
+                            ->label('Total HPP')
+                            ->numeric()
+                            ->prefix('Rp')
+                            ->disabled()
+                            ->dehydrated(true)
+                            ->hidden(fn (): bool => !self::isAdmin()),
+                        Forms\Components\TextInput::make('profit')
+                            ->label('Profit')
+                            ->numeric()
+                            ->prefix('Rp')
+                            ->disabled()
+                            ->dehydrated(true)
+                            ->hidden(fn (): bool => !self::isAdmin()),
+                    ])->columns(4),
+            ]);
+    }
+
+    public static function table(Table $table): Table
+    {
+        return $table
+            ->columns([
+                Tables\Columns\TextColumn::make('so_number')
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('date')
+                    ->date('d M Y')
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('customer.name'),
+                Tables\Columns\TextColumn::make('status')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'DRAFT' => 'gray',
+                        'OPEN' => 'info',
+                        'PARTIAL' => 'warning',
+                        'COMPLETE' => 'success',
+                        'CANCEL' => 'danger',
+                    }),
+				Tables\Columns\TextColumn::make('source')
+					->label('Channel')
+					->badge()
+					->color(fn (?string $state): string => match ($state) {
+						'tiktok' => 'danger',
+						'shopee' => 'warning',
+						'offline' => 'success',
+						default => 'gray',
+					})
+					->icon(fn (?string $state): string => match ($state) {
+						'tiktok' => 'heroicon-m-shopping-bag',
+						'shopee' => 'heroicon-m-shopping-cart',
+						default => 'heroicon-m-building-storefront',
+					})
+					->formatStateUsing(fn (?string $state): string => match ($state) {
+						'tiktok' => 'TikTok Shop',
+						'shopee' => 'Shopee',
+						'offline' => 'Offline',
+						default => $state ?? 'Offline',
+					})
+					->sortable()
+					->toggleable(),
+                Tables\Columns\TextColumn::make('total_qty'),
+                Tables\Columns\TextColumn::make('total_amount')
+                    ->money('IDR'),
+                Tables\Columns\TextColumn::make('profit')
+                    ->money('IDR')
+                    ->hidden(fn (): bool => !self::isAdmin()),
+            ])
+			
+            ->filters([
+                Tables\Filters\SelectFilter::make('status')
+                    ->options([
+                        'DRAFT' => 'Draft',
+                        'OPEN' => 'Open',
+                        'PARTIAL' => 'Partial',
+                        'COMPLETE' => 'Complete',
+                        'CANCEL' => 'Cancel',
+                    ]),
+                Tables\Filters\SelectFilter::make('customer_id')
+                    ->relationship('customer', 'name')
+                    ->searchable()
+                    ->preload(),
+            ])
+            ->actions([
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('createDO')
+                        ->label('Buat Surat Jalan')
+                        ->icon('heroicon-o-truck')
+                        ->color('success')
+                        ->visible(fn (SalesOrder $record): bool => in_array($record->status, ['OPEN', 'PARTIAL']))
+                        ->form(function (SalesOrder $record) {
+                            $items = [];
+                            foreach ($record->details as $d) {
+                                $remaining = $d->remaining_qty ?? 0;
+                                if ($remaining > 0) {
+                                    $items[] = [
+                                        'product_id'   => $d->product_id,
+                                        'product_name' => $d->product?->name ?? '-',
+                                        'max_qty'      => $remaining,
+                                        'qty'          => $remaining,
+                                    ];
+                                }
+                            }
+                            if (empty($items)) {
+                                return [
+                                    Forms\Components\Placeholder::make('info')
+                                        ->content('Tidak ada barang dengan sisa qty > 0 untuk dikirim.')
+                                        ->columnSpanFull(),
+                                ];
+                            }
+                            return [
+                                Forms\Components\Section::make('Preview Pengiriman — SO: ' . $record->so_number)
+                                    ->description('Edit qty jika pengiriman partial. Default = sisa order.')
+                                    ->schema([
+                                        Forms\Components\Select::make('warehouse_id')
+                                            ->label('Gudang Asal')
+                                            ->options(Warehouse::pluck('name', 'id'))
+                                            ->searchable()
+                                            ->required()
+                                            ->default(fn () => Warehouse::first()?->id),
+                                        Forms\Components\Repeater::make('items')
+                                            ->default($items)
+                                            ->schema([
+                                                Forms\Components\Hidden::make('product_id'),
+                                                Forms\Components\TextInput::make('product_name')
+                                                    ->label('Barang')
+                                                    ->disabled()
+                                                    ->columnSpan(2),
+                                                Forms\Components\TextInput::make('max_qty')
+                                                    ->label('Sisa Order')
+                                                    ->disabled()
+                                                    ->numeric(),
+                                                Forms\Components\TextInput::make('qty')
+                                                    ->label('Qty Kirim')
+                                                    ->numeric()
+                                                    ->required()
+                                                    ->minValue(1)
+                                                    ->maxValue(fn (Forms\Get $get) => $get('max_qty'))
+                                                    ->hint(function (Forms\Get $get) {
+                                                        $productId = $get('product_id');
+                                                        $warehouseId = $get('../../warehouse_id');
+                                                        if ($productId && $warehouseId) {
+                                                            $stock = ProductStock::where('product_id', $productId)
+                                                                ->where('warehouse_id', $warehouseId)
+                                                                ->first();
+                                                            $stok = $stock?->physical_stock ?? 0;
+                                                            $warn = ($stok < ($get('qty') ?? 0)) ? '⚠️ ' : '✅ ';
+                                                            return $warn . 'Stok gudang: ' . number_format($stok, 0, ',', '.') . ' unit';
+                                                        }
+                                                        return '';
+                                                    }),
+                                            ])
+                                            ->columns(4)
+                                            ->addable(false)
+                                            ->deletable(false)
+                                            ->reorderable(false),
+                                    ]),
+                            ];
+                        })
+                        ->action(function (SalesOrder $record, array $data) {
+                            $items = collect($data['items'] ?? [])->filter(fn ($i) => ($i['qty'] ?? 0) > 0);
+                            if ($items->isEmpty()) {
+                                Notification::make()
+                                    ->title('Gagal')
+                                    ->body('Tidak ada barang yang dipilih untuk dikirim.')
+                                    ->danger()
+                                    ->send();
+                                return;
+                            }
+                            $do = DeliveryOrder::create([
+                                'do_number'   => 'SJ-' . date('Ymd') . '-' . rand(1000, 9999),
+                                'date'        => now(),
+                                'so_id'       => $record->id,
+                                'customer_id' => $record->customer_id,
+                                'warehouse_id' => $data['warehouse_id'] ?? Warehouse::first()?->id,
+                                'status'      => 'DRAFT',
+                            ]);
+                            foreach ($items as $item) {
+                                $do->details()->create([
+                                    'product_id' => $item['product_id'],
+                                    'qty'        => $item['qty'],
+                                ]);
+                            }
+                            $record->refresh();
+                            $hasRemaining = false;
+                            foreach ($record->details as $d) {
+                                if (($d->remaining_qty ?? 0) > 0) {
+                                    $hasRemaining = true;
+                                    break;
+                                }
+                            }
+                            $record->status = $hasRemaining ? 'PARTIAL' : 'COMPLETE';
+                            $record->save();
+                            Notification::make()
+                                ->title('Surat Jalan berhasil dibuat')
+                                ->body('DO ' . $do->do_number . ' telah dibuat. Status SO: ' . $record->status)
+                                ->success()
+                                ->send();
+                            return redirect(DeliveryOrderResource::getUrl('edit', ['record' => $do]));
+                        })
+                        ->modalSubmitActionLabel('Buat Surat Jalan')
+                        ->modalHeading('Auto Create Surat Jalan')
+                        ->modalWidth('5xl'),
+
+                    Tables\Actions\Action::make('createInvoice')
+                        ->label('Buat Faktur')
+                        ->icon('heroicon-o-document-text')
+                        ->color('warning')
+                        ->visible(fn (SalesOrder $record): bool => in_array($record->status, ['OPEN', 'PARTIAL', 'COMPLETE']))
+                        ->requiresConfirmation()
+                        ->modalHeading('Konfirmasi Buat Faktur')
+                        ->modalDescription(fn (SalesOrder $record): string =>
+                            'Faktur akan dibuat untuk SO ' . $record->so_number .
+                            ' dengan total Rp ' . number_format($record->total_amount, 0, ',', '.') .
+                            '. Lanjutkan?'
+                        )
+                        ->modalSubmitActionLabel('Ya, Buat Faktur')
+                        ->action(function (SalesOrder $record) {
+                            $invoice = SalesInvoice::create([
+                                'invoice_number' => 'INV-' . date('Ymd') . '-' . rand(1000, 9999),
+                                'date'           => now(),
+                                'due_date'       => now()->addDays(30),
+                                'so_id'          => $record->id,
+                                'customer_id'    => $record->customer_id,
+                                'total'          => $record->total_amount,
+                                'paid_amount'    => 0,
+                                'status'         => 'UNPAID',
+                            ]);
+                            foreach ($record->details as $d) {
+                                $invoice->details()->create([
+                                    'product_id' => $d->product_id,
+                                    'qty'        => $d->qty,
+                                    'price'      => $d->unit_price,
+                                    'subtotal'   => $d->subtotal,
+                                ]);
+                            }
+                            Notification::make()
+                                ->title('Faktur berhasil dibuat')
+                                ->body('Invoice ' . $invoice->invoice_number . ' telah dibuat dari SO ' . $record->so_number)
+                                ->success()
+                                ->send();
+                            return redirect(SalesInvoiceResource::getUrl('edit', ['record' => $invoice]));
+                        }),
+
+                    Tables\Actions\Action::make('printPdf')
+                        ->label('Print PDF')
+                        ->icon('heroicon-o-printer')
+                        ->color('info')
+                        ->action(function (SalesOrder $record) {
+                            $company = CompanySetting::first();
+                            $pdf = Pdf::loadView('pdf.so', ['so' => $record->load('details.product', 'customer', 'creator'), 'company' => $company]);
+                            return response()->streamDownload(function () use ($pdf) {
+                                echo $pdf->output();
+                            }, 'SO-' . $record->so_number . '.pdf');
+                        }),
+
+                    Tables\Actions\ViewAction::make(),
+                    Tables\Actions\EditAction::make(),
+                    Tables\Actions\DeleteAction::make(),
+					// Tombol Create DO khusus marketplace
+					\App\Filament\Actions\CreateDeliveryOrderAction::make(),
+                ]),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+                ]),
+            ]);
+    }
+
+    public static function getPages(): array
+    {
+        return [
+            'index'  => Pages\ListSalesOrders::route('/'),
+            'create' => Pages\CreateSalesOrder::route('/create'),
+            'edit'   => Pages\EditSalesOrder::route('/{record}/edit'),
+            'view'   => Pages\ViewSalesOrder::route('/{record}'),
+        ];
+    }
+}

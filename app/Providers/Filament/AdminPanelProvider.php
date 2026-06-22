@@ -64,6 +64,7 @@ class AdminPanelProvider extends PanelProvider
 				\App\Filament\Resources\EmployeeLoanResource::class,
 				\App\Filament\Resources\PayrollResource::class,
 				\App\Filament\Resources\CompanySettingResource::class,
+				\App\Filament\Resources\MarketplaceConnectionResource::class,
             ])
             ->pages([
                 Pages\Dashboard::class,
@@ -71,6 +72,7 @@ class AdminPanelProvider extends PanelProvider
 				\App\Filament\Pages\PosPage::class,
 				\App\Filament\Pages\LedgerReport::class,
 				\App\Filament\Pages\RegisterCompany::class,
+				\App\Filament\Pages\ExecutiveDashboard::class,
 				
             ])
             ->widgets([

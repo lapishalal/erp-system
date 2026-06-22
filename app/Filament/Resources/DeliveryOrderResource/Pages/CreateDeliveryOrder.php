@@ -3,48 +3,51 @@
 namespace App\Filament\Resources\DeliveryOrderResource\Pages;
 
 use App\Filament\Resources\DeliveryOrderResource;
-use App\Models\SalesOrder;
-use App\Models\Warehouse;
+use App\Models\ProductStock;
+use App\Models\SalesOrderDetail;
 use Filament\Resources\Pages\CreateRecord;
 
 class CreateDeliveryOrder extends CreateRecord
 {
     protected static string $resource = DeliveryOrderResource::class;
 
-    protected function fillForm(): void
+    protected function mutateFormDataBeforeCreate(array $data): array
     {
-        $soId = request()->query('so_id');
+        // Filter hanya item dengan qty > 0
+        $filtered = [];
+        foreach ($data['details'] ?? [] as $item) {
+            $qty = (int) ($item['qty'] ?? 0);
+            if ($qty <= 0) {
+                continue;
+            }
 
-        if ($soId) {
-            $so = SalesOrder::with(['details.product'])->find($soId);
+            // Validasi max
+            $soDetail = SalesOrderDetail::find($item['so_detail_id'] ?? null);
+            $stock = ProductStock::where('product_id', $item['product_id'] ?? null)
+                ->where('warehouse_id', $data['warehouse_id'] ?? null)
+                ->first();
 
-            if ($so) {
-                $details = [];
+            $remaining = $soDetail ? $soDetail->remaining_qty : 0;
+            $available = $stock ? $stock->available_stock : 0;
+            $max = min($remaining, $available);
 
-                foreach ($so->details as $d) {
-                    $remaining = $d->remaining_qty ?? 0;
+            if ($qty > $max) {
+                $qty = $max;
+            }
 
-                    if ($remaining > 0) {
-                        $details[] = [
-                            'product_id' => $d->product_id,
-                            'max_qty'    => $remaining,
-                            'qty'        => $remaining,
-                        ];
-                    }
-                }
-
-                if (count($details) > 0) {
-                    $this->form->fill([
-                        'so_id'       => $so->id,
-                        'customer_id' => $so->customer_id,
-                        'warehouse_id' => Warehouse::first()?->id,
-                        'details'     => $details,
-                    ]);
-                    return;
-                }
+            if ($qty > 0) {
+                $filtered[] = [
+                    'so_detail_id' => $item['so_detail_id'],
+                    'product_id' => $item['product_id'],
+                    'qty' => $qty,
+                    'notes' => $item['notes'] ?? null,
+                ];
             }
         }
 
-        parent::fillForm();
+        $data['details'] = $filtered;
+        $data['total_qty'] = array_sum(array_column($filtered, 'qty'));
+
+        return $data;
     }
 }

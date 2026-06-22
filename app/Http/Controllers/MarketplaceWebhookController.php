@@ -1,0 +1,126 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Enums\MarketplacePlatform;
+use App\Models\MarketplaceLog;
+use App\Models\MarketplaceOrder;
+use App\Services\MarketplaceOrderProcessor;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+class MarketplaceWebhookController extends Controller
+{
+    public function tiktok(Request $request, string $tenantId): JsonResponse
+    {
+        return $this->handleWebhook(
+            platform: MarketplacePlatform::TIKTOK,
+            tenantId: $tenantId,
+            request: $request
+        );
+    }
+
+    public function shopee(Request $request, string $tenantId): JsonResponse
+    {
+        return $this->handleWebhook(
+            platform: MarketplacePlatform::SHOPEE,
+            tenantId: $tenantId,
+            request: $request
+        );
+    }
+
+    private function handleWebhook(MarketplacePlatform $platform, string $tenantId, Request $request): JsonResponse
+    {
+        $payload = $request->all();
+        $eventType = $request->header('X-Event-Type') 
+            ?? $request->input('event_type') 
+            ?? $request->input('type') 
+            ?? 'unknown';
+
+        try {
+            DB::transaction(function () use ($platform, $tenantId, $payload, $eventType, $request) {
+                // 1. Simpan log
+                MarketplaceLog::create([
+                    'tenant_id' => $tenantId,
+                    'connection_id' => null,
+                    'platform' => $platform,
+                    'event_type' => $eventType,
+                    'direction' => 'incoming',
+                    'payload' => $payload,
+                    'is_success' => true,
+                    'ip_address' => $request->ip(),
+                ]);
+
+                // 2. Simpan marketplace order
+                $orderId = $payload['order_id'] ?? $payload['data']['order_id'] ?? null;
+                if ($platform === MarketplacePlatform::SHOPEE) {
+                    $data = $payload['data'] ?? $payload;
+                    $orderId = $data['ordersn'] ?? $data['order_sn'] ?? $data['order_id'] ?? null;
+                }
+
+                if (!$orderId) {
+                    Log::warning('Webhook: no order_id', ['payload' => $payload]);
+                    return;
+                }
+
+                $exists = MarketplaceOrder::where('tenant_id', $tenantId)
+                    ->where('platform', $platform)
+                    ->where('platform_order_id', $orderId)
+                    ->exists();
+
+                if ($exists) {
+                    Log::info('Webhook: order already exists', ['order_id' => $orderId]);
+                    return;
+                }
+
+                $marketplaceOrder = MarketplaceOrder::create([
+                    'tenant_id' => $tenantId,
+                    'connection_id' => null,
+                    'platform' => $platform,
+                    'platform_order_id' => $orderId,
+                    'platform_order_sn' => $payload['order_sn'] ?? $orderId,
+                    'status' => $payload['order_status'] ?? $payload['data']['status'] ?? 'pending',
+                    'synced_at' => now(),
+                    'raw_payload' => $payload,
+                    'is_mapped' => false,
+                ]);
+
+                Log::info('Webhook: marketplace order saved', [
+                    'marketplace_order_id' => $marketplaceOrder->id,
+                    'platform_order_id' => $orderId,
+                ]);
+
+                // 3. Auto proses jadi SO (hanya kalau status PAID/READY_TO_SHIP)
+                $status = strtoupper($marketplaceOrder->status);
+                $autoProcessStatuses = ['PAID', 'READY_TO_SHIP', 'TO_SHIP', 'CONFIRMED', 'COMPLETED'];
+
+                if (in_array($status, $autoProcessStatuses)) {
+                    Log::info('Webhook: auto-processing to SO', ['status' => $status]);
+                    $processor = app(MarketplaceOrderProcessor::class);
+                    $processor->process($marketplaceOrder);
+                } else {
+                    Log::info('Webhook: status not auto-processed', ['status' => $status]);
+                }
+            });
+
+            return response()->json(['code' => 0, 'message' => 'success']);
+
+        } catch (\Throwable $e) {
+            Log::error('Webhook error', [
+                'platform' => $platform->value,
+                'tenant_id' => $tenantId,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+
+            return response()->json([
+                'code' => 500,
+                'message' => 'error',
+                'detail' => $e->getMessage(),
+            ], 500);
+        }
+    }
+}
