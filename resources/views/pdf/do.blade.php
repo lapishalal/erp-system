@@ -15,6 +15,7 @@ body { font-family: Arial, sans-serif; font-size: 12px; }
 .items-table th, .items-table td { border: 1px solid #333; padding: 6px; text-align: left; }
 .items-table th { background: #f0f0f0; }
 .items-table .right { text-align: right; }
+.items-table .center { text-align: center; }
 .footer { margin-top: 40px; }
 .footer-table { width: 100%; }
 .footer-table td { text-align: center; vertical-align: top; padding-top: 60px; }
@@ -39,14 +40,43 @@ body { font-family: Arial, sans-serif; font-size: 12px; }
     <tr><td class="label">Driver</td><td>: {{ $do->driver ?? '-' }}</td><td class="label">Kendaraan</td><td>: {{ $do->vehicle ?? '-' }}</td></tr>
 </table>
 
+{{-- ========================================= --}}
+{{-- === TABEL UTAMA: DIUBAH DARI 3 JADI 5 KOLOM === --}}
+{{-- ========================================= --}}
 <table class="items-table">
-    <thead><tr><th>No</th><th>Barang</th><th class="right">Qty</th></tr></thead>
+    <thead>
+        <tr>
+            <th class="center" style="width: 30px;">No</th>
+            {{-- === TAMBAHAN: KOLOM NO SO === --}}
+            <th style="width: 100px;">No SO</th>
+            <th>Barang</th>
+            {{-- === TAMBAHAN: KOLOM JUMLAH KIRIM (ganti label Qty) === --}}
+            <th class="right" style="width: 100px;">Jumlah Kirim</th>
+            {{-- === TAMBAHAN: KOLOM SISA BARANG === --}}
+            <th class="right" style="width: 120px;">Sisa Barang (Belum dikirim)</th>
+        </tr>
+    </thead>
     <tbody>
         @foreach($do->details as $i => $d)
-        <tr><td>{{ $i + 1 }}</td><td>{{ $d->product?->name ?? '-' }}</td><td class="right">{{ number_format($d->qty, 0, ',', '.') }}</td></tr>
+        <tr>
+            <td class="center">{{ $i + 1 }}</td>
+            {{-- === TAMBAHAN: AMBIL NO SO DARI RELASI salesOrderDetail === --}}
+            <td>{{ $d->salesOrderDetail?->salesOrder?->so_number ?? '-' }}</td>
+            <td>{{ $d->product?->name ?? '-' }}</td>
+            {{-- === DIUBAH: LABEL QTY MENJADI JUMLAH KIRIM, DATA TETAP qty === --}}
+            <td class="right">{{ number_format($d->qty, 0, ',', '.') }}</td>
+            {{-- === TAMBAHAN: AMBIL SISA DARI salesOrderDetail.remaining_qty === --}}
+            <td class="right">{{ number_format(max(0, ($d->salesOrderDetail?->remaining_qty ?? 0) - $d->qty), 0, ',', '.') }}</td>
+        </tr>
         @endforeach
     </tbody>
-    <tfoot><tr><th colspan="2" class="right">Total Qty</th><th class="right">{{ number_format($do->total_qty, 0, ',', '.') }}</th></tr></tfoot>
+    <tfoot>
+        {{-- === DIUBAH: colspan 2 JADI 4 (sesuai jumlah kolom sebelum Total) === --}}
+        <tr>
+            <th colspan="4" class="right">Total Qty</th>
+            <th class="right">{{ number_format($do->total_qty, 0, ',', '.') }}</th>
+        </tr>
+    </tfoot>
 </table>
 
 <p><strong>Catatan:</strong> {{ $do->notes ?? '-' }}</p>

@@ -46,6 +46,7 @@ class GoodsReceiptDetail extends Model
             self::updatePurchaseOrder($detail, $detail->qty);
             self::updateProductLastBuyPrice($detail);
             self::updateStock($detail, $detail->qty);
+            self::createProductBuyPrice($detail);
         });
 
         static::updated(function (self $detail) {
@@ -63,6 +64,34 @@ class GoodsReceiptDetail extends Model
             self::updatePurchaseOrder($detail, -$detail->qty);
             self::updateStock($detail, -$detail->qty);
         });
+
+        // ============================================
+        // FIX BARU: Trigger jurnal setiap kali detail di-save
+        // Karena DB::afterCommit() tidak jalan tanpa transaction
+        // ============================================
+        static::created(function (self $detail) {
+            $gr = \App\Models\GoodsReceipt::find($detail->gr_id);
+            if ($gr && $gr->status === 'RECEIVED') {
+                \App\Models\GoodsReceipt::createJournal($gr);
+            }
+        });
+    }
+
+    protected static function createProductBuyPrice(self $detail): void
+    {
+        $gr = \App\Models\GoodsReceipt::find($detail->gr_id);
+        if (!$gr) {
+            return;
+        }
+
+        \App\Models\ProductBuyPrice::create([
+            'product_id' => $detail->product_id,
+            'gr_id' => $gr->id,
+            'supplier_id' => $gr->supplier_id,
+            'buy_price' => $detail->buy_price,
+            'qty' => $detail->qty,
+            'date' => $gr->date,
+        ]);
     }
 
     protected static function updateParentTotal(?int $grId): void
@@ -157,6 +186,21 @@ class GoodsReceiptDetail extends Model
             'reference_type' => self::class,
             'reference_id' => $detail->gr_id,
             'notes' => 'Goods Receipt #' . ($gr->gr_number ?? $gr->id),
+        ]);
+        
+        $supplierName = $gr->supplier?->name ?? '-';
+
+        \App\Models\StockTransaction::create([
+            'product_id' => $detail->product_id,
+            'warehouse_id' => $gr->warehouse_id,
+            'type' => 'IN',
+            'reference_type' => self::class,
+            'reference_id' => $detail->gr_id,
+            'qty' => abs($detail->qty),
+            'price' => $detail->buy_price,
+            'remaining_stock' => $stock->physical_stock,
+            'notes' => 'GR #' . ($gr->gr_number ?? $gr->id) . ' | Supplier: ' . $supplierName,
+            'created_by' => auth()->id(),
         ]);
     }
 

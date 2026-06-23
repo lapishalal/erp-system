@@ -11,6 +11,7 @@ use App\Services\StockService;
 
 class GoodsReceiptObserver
 {
+    /*
     public function created(GoodsReceipt $goodsReceipt): void
     {
         if ($goodsReceipt->status === 'RECEIVED') {
@@ -26,9 +27,29 @@ class GoodsReceiptObserver
             $this->processReceipt($goodsReceipt);
         }
     }
+    */
 
     protected function processReceipt(GoodsReceipt $goodsReceipt): void
     {
+        // ============================================
+        // FIX: Cek duplikasi jurnal — jika sudah ada (dibuat oleh GoodsReceipt::booted()), skip
+        // Ini mencegah double jurnal jika GoodsReceipt::booted() juga jalan
+        // ============================================
+        $existingJournal = \App\Models\JournalEntry::where('reference_type', GoodsReceipt::class)
+            ->where('reference_id', $goodsReceipt->id)
+            ->first();
+
+        if ($existingJournal && $existingJournal->total_debit > 0) {
+            // Jurnal sudah benar, skip semua proses
+            return;
+        }
+
+        // Jika jurnal ada tapi total 0 (bug lama), hapus dulu lalu buat ulang
+        if ($existingJournal && $existingJournal->total_debit <= 0) {
+            $existingJournal->details()->delete();
+            $existingJournal->delete();
+        }
+
         $totalAmount = 0;
         $warehouseId = $goodsReceipt->warehouse_id ?? 1;
 
@@ -38,7 +59,7 @@ class GoodsReceiptObserver
         foreach ($goodsReceipt->details as $detail) {
             if ($detail->qty <= 0) continue;
 
-            // ✅ Add stock pakai qty (bukan subtotal)
+            // Add stock
             StockService::addStock(
                 $detail->product_id,
                 $warehouseId,
@@ -89,12 +110,10 @@ class GoodsReceiptObserver
             $this->updatePurchaseOrderStatus($goodsReceipt->po_id);
         }
 
-        // Save total amount to GR
-        $goodsReceipt->total_amount = $totalAmount;
-        $goodsReceipt->saveQuietly();
-
-        // Auto journal
-        JournalService::journalGoodsReceipt($totalAmount, $goodsReceipt->created_by);
+        // Hanya buat jurnal jika total > 0
+        if ($totalAmount > 0) {
+            JournalService::journalGoodsReceipt($totalAmount, $goodsReceipt->created_by);
+        }
     }
 
     protected function updatePurchaseOrderStatus(int $poId): void

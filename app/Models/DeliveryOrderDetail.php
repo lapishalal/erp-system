@@ -198,6 +198,30 @@ class DeliveryOrderDetail extends Model
             'reference_id' => $detail->do_id,
             'notes' => 'Delivery Order #' . ($do->do_number ?? $do->id),
         ]);
+        
+        // =========================================================
+        // FIX: Catat ke stock_transactions (Kartu Stok / Laporan Stok)
+        // =========================================================
+        $soDetail = null;
+        if ($detail->so_detail_id) {
+            $soDetail = \App\Models\SalesOrderDetail::with('salesOrder.customer')->find($detail->so_detail_id);
+        }
+
+        $customerName = $soDetail?->salesOrder?->customer?->name ?? '-';
+        $unitPrice = $soDetail?->unit_price ?? 0;
+
+        \App\Models\StockTransaction::create([
+            'product_id' => $detail->product_id,
+            'warehouse_id' => $do->warehouse_id,
+            'type' => 'OUT',
+            'reference_type' => self::class,
+            'reference_id' => $detail->do_id,
+            'qty' => -abs($detail->qty),  // Negatif untuk keluar
+            'price' => $unitPrice,
+            'remaining_stock' => $stock->physical_stock,
+            'notes' => 'DO #' . ($do->do_number ?? $do->id) . ' | Customer: ' . $customerName,
+            'created_by' => auth()->id(),
+        ]);
     }
 
     public function deliveryOrder(): BelongsTo

@@ -65,6 +65,7 @@ class AdminPanelProvider extends PanelProvider
 				\App\Filament\Resources\PayrollResource::class,
 				\App\Filament\Resources\CompanySettingResource::class,
 				\App\Filament\Resources\MarketplaceConnectionResource::class,
+				\App\Filament\Resources\StockTransactionResource::class,
             ])
             ->pages([
                 Pages\Dashboard::class,

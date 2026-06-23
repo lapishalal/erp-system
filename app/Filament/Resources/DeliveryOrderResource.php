@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\DeliveryOrderResource\Pages;
+use App\Models\CompanySetting;
 use App\Models\Customer;
 use App\Models\DeliveryOrder;
 use App\Models\ProductStock;
@@ -15,6 +16,7 @@ use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class DeliveryOrderResource extends Resource
 {
@@ -43,6 +45,10 @@ class DeliveryOrderResource extends Resource
             $remaining = $soDetail?->remaining_qty ?? 0;
             $stockQty = $stock?->available_stock ?? 0;
             $qty = $item['qty'] ?? 0;
+            
+            if (filled($item['id'] ?? null)) {
+                $remaining += $qty;
+            }
 
             $set("details.{$key}.so_number", $soDetail?->salesOrder?->so_number ?? '-');
             $set("details.{$key}.product_name", $soDetail?->product?->name ?? '-');
@@ -316,8 +322,21 @@ class DeliveryOrderResource extends Resource
                     ->preload(),
             ])
             ->actions([
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('printPdf')
+                        ->label('Print PDF')
+                        ->icon('heroicon-o-printer')
+                        ->color('info')
+                        ->action(function (DeliveryOrder $record) {
+                            $company = CompanySetting::first();
+                            $pdf = Pdf::loadView('pdf.do', ['do' => $record->load('details.product', 'salesOrder', 'customer'), 'company' => $company]);
+                            return response()->streamDownload(function () use ($pdf) {
+                                echo $pdf->output();
+                            }, 'SJ-' . $record->do_number . '.pdf');
+                        }),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
+                ]),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

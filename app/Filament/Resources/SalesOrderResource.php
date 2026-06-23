@@ -266,6 +266,7 @@ class SalesOrderResource extends Resource
                                 if ($remaining > 0) {
                                     $items[] = [
                                         'product_id'   => $d->product_id,
+                                        'so_detail_id' => $d->id,  // ← TAMBAH INI
                                         'product_name' => $d->product?->name ?? '-',
                                         'max_qty'      => $remaining,
                                         'qty'          => $remaining,
@@ -293,6 +294,7 @@ class SalesOrderResource extends Resource
                                             ->default($items)
                                             ->schema([
                                                 Forms\Components\Hidden::make('product_id'),
+                                                Forms\Components\Hidden::make('so_detail_id'),  // ← TAMBAH INI
                                                 Forms\Components\TextInput::make('product_name')
                                                     ->label('Barang')
                                                     ->disabled()
@@ -349,6 +351,7 @@ class SalesOrderResource extends Resource
                             foreach ($items as $item) {
                                 $do->details()->create([
                                     'product_id' => $item['product_id'],
+                                    'so_detail_id' => $item['so_detail_id'] ?? null, // ← TAMBAH INI
                                     'qty'        => $item['qty'],
                                 ]);
                             }

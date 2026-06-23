@@ -12,6 +12,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class PurchaseReturnResource extends Resource
 {
@@ -27,10 +28,17 @@ class PurchaseReturnResource extends Resource
         return auth()->check() && auth()->user()->hasRole('Admin') || auth()->check() && auth()->user()->hasPermissionTo('manage_purchase_returns');
     }
 
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->where('tenant_id', auth()->user()->tenant_id);
+    }
+
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
+                // ... schema tetap sama ...
                 Forms\Components\Section::make('Informasi Retur')
                     ->schema([
                         Forms\Components\TextInput::make('return_number')
@@ -208,8 +216,11 @@ class PurchaseReturnResource extends Resource
                     ->preload(),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->visible(fn (PurchaseReturn $record): bool => $record->status !== 'PROCESSED'),
+
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn (PurchaseReturn $record): bool => $record->status !== 'PROCESSED'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

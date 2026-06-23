@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ProductStockResource\Pages;
 use App\Models\ProductStock;
+use App\Models\StockTransaction;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
 use Filament\Forms;
@@ -12,6 +13,9 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -255,6 +259,45 @@ class ProductStockResource extends Resource
                                 'warehouse' => $record->warehouse,
                                 'totalPending' => $totalPending,
                                 'customers' => $customers,
+                            ]);
+                        }),
+                        
+                    // =========================================================
+                    // TOMBOL BARU: HISTORY STOK (Keluar Masuk)
+                    // =========================================================
+                    Tables\Actions\Action::make('viewHistory')
+                        ->label('History')
+                        ->icon('heroicon-o-clock')
+                        ->color('info')
+                        ->button()
+                        ->size('sm')
+                        ->modalHeading(function (ProductStock $record): string {
+                            $name = $record->product ? $record->product->name : '-';
+                            return 'History Stok: ' . $name;
+                        })
+                        ->modalDescription(function (ProductStock $record): string {
+                            $sku = ($record->product && $record->product->code) ? $record->product->code : '-';
+                            $wh = $record->warehouse ? $record->warehouse->name : '-';
+                            return 'Kode: ' . $sku . ' | Gudang: ' . $wh;
+                        })
+                        ->modalSubmitAction(false)
+                        ->modalCancelActionLabel('Tutup')
+                        ->modalWidth('5xl')
+                        ->modalContent(function (ProductStock $record) {
+                            $productId = $record->product_id;
+                            $warehouseId = $record->warehouse_id;
+
+                            $history = StockTransaction::where('product_id', $productId)
+                                ->where('warehouse_id', $warehouseId)
+                                ->with(['creator'])
+                                ->orderBy('created_at', 'desc')
+                                ->limit(100)
+                                ->get();
+
+                            return view('filament.modals.stock-history', [
+                                'product' => $record->product,
+                                'warehouse' => $record->warehouse,
+                                'history' => $history,
                             ]);
                         }),
                 ]),

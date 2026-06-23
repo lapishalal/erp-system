@@ -36,7 +36,7 @@ class AppServiceProvider extends ServiceProvider
     {
         //SalesOrder::observe(SalesOrderObserver::class);
         DeliveryOrder::observe(DeliveryOrderObserver::class);
-        GoodsReceipt::observe(GoodsReceiptObserver::class);
+        //GoodsReceipt::observe(GoodsReceiptObserver::class);
         SalesInvoice::observe(SalesInvoiceObserver::class);
         CashIn::observe(CashInObserver::class);
         CashOut::observe(CashOutObserver::class);
