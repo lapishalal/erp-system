@@ -334,8 +334,10 @@ class DeliveryOrderResource extends Resource
                                 echo $pdf->output();
                             }, 'SJ-' . $record->do_number . '.pdf');
                         }),
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->visible(fn (DeliveryOrder $record): bool => $record->status === 'DRAFT'),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn (DeliveryOrder $record): bool => $record->status === 'DRAFT'),
                 ]),
             ])
             ->bulkActions([

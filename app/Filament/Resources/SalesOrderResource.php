@@ -429,8 +429,10 @@ class SalesOrderResource extends Resource
                         }),
 
                     Tables\Actions\ViewAction::make(),
-                    Tables\Actions\EditAction::make(),
-                    Tables\Actions\DeleteAction::make(),
+                    Tables\Actions\EditAction::make()
+                        ->visible(fn (SalesOrder $record): bool => $record->status === 'DRAFT'),
+                    Tables\Actions\DeleteAction::make()
+                        ->visible(fn (SalesOrder $record): bool => $record->status === 'DRAFT'),
 					// Tombol Create DO khusus marketplace
 					\App\Filament\Actions\CreateDeliveryOrderAction::make(),
                 ]),

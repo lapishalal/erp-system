@@ -10,12 +10,12 @@ use Illuminate\Support\Facades\Log;
 class TelegramSalesNotificationService
 {
     private string $botToken;
-    private string $chatId;
+    private string $chatId = '';
 
     public function __construct()
     {
         $this->botToken = config('services.telegram.bot_token');
-        $this->chatId = config('services.telegram.chat_id');
+        $this->chatId = config('services.telegram.chat_id') ?? '';
     }
 
     public function notifyStageChange(SalesOrder $so, string $stage, string $status): void

@@ -51,6 +51,47 @@ class JournalService
             return $journal;
         });
     }
+    
+    /**
+    * Create sales journal linked to Delivery Order
+    */
+    public static function journalDeliveryOrder(float $total, float $hpp, int $deliveryOrderId, ?int $userId = null): void
+    {
+        $accountPiutang = Account::where('code', '1-10003')->first();
+        $accountPenjualan = Account::where('code', '4-10001')->first();
+        $accountHpp = Account::where('code', '5-10001')->first();
+        $accountPersediaan = Account::where('code', '1-20001')->first();
+
+        if (!$accountPiutang || !$accountPenjualan || !$accountHpp || !$accountPersediaan) {
+            throw new \Exception('Required accounts for sales journal not found');
+        }
+
+        // Journal 1: Piutang vs Penjualan
+        self::createJournal(
+            'Penjualan barang dagang — DO #' . $deliveryOrderId,
+            [
+                ['account_id' => $accountPiutang->id, 'type' => 'DEBIT', 'amount' => $total, 'detail_description' => 'Piutang customer'],
+                ['account_id' => $accountPenjualan->id, 'type' => 'CREDIT', 'amount' => $total, 'detail_description' => 'Pendapatan penjualan'],
+            ],
+            \App\Models\DeliveryOrder::class,
+            $deliveryOrderId,
+            $userId
+        );
+
+        // Journal 2: HPP vs Persediaan
+        if ($hpp > 0) {
+            self::createJournal(
+                'Harga pokok penjualan — DO #' . $deliveryOrderId,
+                [
+                    ['account_id' => $accountHpp->id, 'type' => 'DEBIT', 'amount' => $hpp, 'detail_description' => 'Beban HPP'],
+                    ['account_id' => $accountPersediaan->id, 'type' => 'CREDIT', 'amount' => $hpp, 'detail_description' => 'Pengurangan persediaan'],
+                ],
+                \App\Models\DeliveryOrder::class,
+                $deliveryOrderId,
+                $userId
+            );
+        }
+    }
 
     public static function journalSalesInvoice(float $total, float $hpp, ?int $userId = null): void
     {

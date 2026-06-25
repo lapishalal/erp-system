@@ -26,7 +26,7 @@ class SalesOrder extends Model
         'notes',
         'created_by',
         'approved_by',
-		'source',
+        'source',
     ];
 
     protected $casts = [
@@ -36,7 +36,22 @@ class SalesOrder extends Model
         'total_cost' => 'decimal:2',
         'profit' => 'decimal:2',
     ];
-    
+
+    // =========================================================
+    // FIX: Hanya handle CANCEL — outstanding dihandle oleh SalesOrderDetail::created
+    // =========================================================
+    protected static function booted(): void
+    {
+        static::updated(function (self $so) {
+            if ($so->isDirty('status') && $so->status === 'CANCEL') {
+                $so->load('details');
+                foreach ($so->details as $detail) {
+                    SalesOrderDetail::updateOutstandingStock($detail, -$detail->qty);
+                }
+            }
+        });
+    }
+
     public function salesInvoices(): HasMany
     {
         return $this->hasMany(SalesInvoice::class, 'so_id');
@@ -71,5 +86,4 @@ class SalesOrder extends Model
     {
         return $this->belongsTo(User::class, 'approved_by');
     }
-    
 }

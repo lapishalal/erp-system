@@ -46,35 +46,53 @@ class DeliveryOrder extends Model
                 if (!$wasShipped && $isShipped) {
                     $do->load('details');
                     foreach ($do->details as $detail) {
+                        // Kurangi stok fisik
                         DeliveryOrderDetail::updateStock($detail, $detail->qty);
+                        // Release DO outstanding
                         DeliveryOrderDetail::updateOutstandingStock($detail, -$detail->qty);
+                        
+                        // =========================================================
+                        // FIX: Release SO outstanding (warehouse 1)
+                        // =========================================================
+                        if ($detail->so_detail_id) {
+                            $soDetail = \App\Models\SalesOrderDetail::find($detail->so_detail_id);
+                            if ($soDetail) {
+                                \App\Models\SalesOrderDetail::updateOutstandingStock($soDetail, -$detail->qty);
+                            }
+                        }
                     }
                 } elseif ($wasShipped && !$isShipped) {
                     $do->load('details');
                     foreach ($do->details as $detail) {
+                        // Kembalikan stok fisik
                         DeliveryOrderDetail::updateStock($detail, -$detail->qty);
-                        DeliveryOrderDetail::updateOutstandingStock($detail, $detail->qty);
+                    }
+                    
+                    // Restore DO outstanding hanya saat kembali ke DRAFT
+                    if ($newStatus !== 'CANCEL') {
+                        foreach ($do->details as $detail) {
+                            DeliveryOrderDetail::updateOutstandingStock($detail, $detail->qty);
+                            
+                            // Restore SO outstanding (warehouse 1)
+                            if ($detail->so_detail_id) {
+                                $soDetail = \App\Models\SalesOrderDetail::find($detail->so_detail_id);
+                                if ($soDetail) {
+                                    \App\Models\SalesOrderDetail::updateOutstandingStock($soDetail, $detail->qty);
+                                }
+                            }
+                        }
                     }
                 }
             }
         });
 
-        // =========================================================
-        // FIX: Saat DO dihapus, restore semua stok & hapus details
-        // =========================================================
         static::deleting(function (self $do) {
             $do->load('details');
             foreach ($do->details as $detail) {
-                // Kembalikan remaining_qty ke Sales Order
                 DeliveryOrderDetail::updateSalesOrderDetail($detail, -$detail->qty);
-
-                // Kembalikan stok fisik ke gudang
                 DeliveryOrderDetail::updateStock($detail, -$detail->qty);
-
-                // Kembalikan outstanding_stock
                 DeliveryOrderDetail::updateOutstandingStock($detail, $detail->qty);
             }
-            // Hapus semua detail (tanpa trigger event, sudah di-restore di atas)
             $do->details()->delete();
         });
     }

@@ -3,31 +3,27 @@
 namespace App\Observers;
 
 use App\Models\DeliveryOrder;
-use App\Models\DeliveryOrderDetail;
+use App\Models\JournalEntry;
 use App\Models\Product;
-use App\Models\ProductBuyPrice;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderDetail;
 use App\Services\JournalService;
-use App\Services\StockService;
 use App\Jobs\SyncStockToMarketplace;
+use Illuminate\Support\Facades\Log;
 
 class DeliveryOrderObserver
 {
     public function created(DeliveryOrder $deliveryOrder): void
     {
-		$deliveryOrder->load('details');
-		
-        // When DO is created (draft), reserve outstanding
+        $deliveryOrder->load('details');
         foreach ($deliveryOrder->details as $detail) {
-            StockService::addOutstanding($detail->product_id, 1, $detail->qty);
-			SyncStockToMarketplace::dispatch(
+            SyncStockToMarketplace::dispatch(
                 $detail->product_id,
                 $deliveryOrder->tenant_id
             );
         }
     }
-    
+
     public function updating(DeliveryOrder $do): void
     {
         if ($do->isDirty('status')) {
@@ -45,104 +41,151 @@ class DeliveryOrderObserver
             $oldStatus = $deliveryOrder->getOriginal('status');
             $newStatus = $deliveryOrder->status;
 
-            // Draft -> Delivered: deduct physical stock, release outstanding
             if ($oldStatus === 'DRAFT' && $newStatus === 'DELIVERED') {
                 $this->processDelivery($deliveryOrder);
             }
 
-            // Delivered -> Draft: reverse (rare case)
-            if ($oldStatus === 'DELIVERED' && $newStatus === 'DRAFT') {
+            if ($oldStatus === 'DELIVERED' && in_array($newStatus, ['DRAFT', 'CANCEL'])) {
                 $this->reverseDelivery($deliveryOrder);
             }
         }
     }
 
+    public function deleted(DeliveryOrder $deliveryOrder): void
+    {
+        $this->deleteJournals($deliveryOrder);
+    }
+
     protected function processDelivery(DeliveryOrder $deliveryOrder): void
     {
+        $deliveryOrder = $deliveryOrder->fresh(['details']);
+
         $totalHpp = 0;
         $totalSales = 0;
 
-        foreach ($deliveryOrder->details as $detail) {
-            // Deduct outstanding first
-            StockService::deductOutstanding($detail->product_id, 1, $detail->qty);
+        Log::info('DO processDelivery started', [
+            'do_id' => $deliveryOrder->id,
+            'do_number' => $deliveryOrder->do_number,
+            'so_id' => $deliveryOrder->so_id,
+            'details_count' => $deliveryOrder->details->count(),
+        ]);
 
-            // Get cost price (FIFO - last buy price or product last_buy_price)
+        foreach ($deliveryOrder->details as $detail) {
             $product = Product::find($detail->product_id);
             $costPrice = $product->last_buy_price ?? 0;
-
-            // Deduct physical stock
-            StockService::deductStock(
-                $detail->product_id,
-                1,
-                $detail->qty,
-                $costPrice,
-                'OUT',
-                DeliveryOrder::class,
-                $deliveryOrder->id,
-                'Surat Jalan ' . $deliveryOrder->do_number,
-                $deliveryOrder->created_by
-            );
-
             $totalHpp += ($costPrice * $detail->qty);
 
-            // Find SO detail to get sale price
-            $soDetail = SalesOrderDetail::where('so_id', $deliveryOrder->so_id)
-                ->where('product_id', $detail->product_id)
-                ->first();
+            $soDetail = null;
+            if ($detail->so_detail_id) {
+                $soDetail = SalesOrderDetail::find($detail->so_detail_id);
+            } elseif ($deliveryOrder->so_id) {
+                $soDetail = SalesOrderDetail::where('so_id', $deliveryOrder->so_id)
+                    ->where('product_id', $detail->product_id)
+                    ->first();
+            }
+
+            Log::info('DO detail processing', [
+                'do_detail_id' => $detail->id,
+                'product_id' => $detail->product_id,
+                'so_detail_id' => $detail->so_detail_id,
+                'so_detail_found' => $soDetail ? 'YES' : 'NO',
+                'unit_price' => $soDetail?->unit_price,
+                'qty' => $detail->qty,
+            ]);
 
             if ($soDetail) {
                 $totalSales += ($soDetail->unit_price * $detail->qty);
 
-                // Update delivered qty
                 $soDetail->delivered_qty += $detail->qty;
                 $soDetail->remaining_qty = max(0, $soDetail->qty - $soDetail->delivered_qty);
-                $soDetail->save();
+                $soDetail->saveQuietly();
             }
         }
 
-        // Update SO status
         $this->updateSalesOrderStatus($deliveryOrder->so_id);
 
-        // Auto journal HPP if you want immediately, or wait until invoice
-        // For now, we journal when invoice is created
+        Log::info('DO totals calculated', [
+            'do_id' => $deliveryOrder->id,
+            'total_sales' => $totalSales,
+            'total_hpp' => $totalHpp,
+        ]);
+
+        try {
+            $existingJournal = JournalEntry::where('reference_type', DeliveryOrder::class)
+                ->where('reference_id', $deliveryOrder->id)
+                ->first();
+
+            if (!$existingJournal && $totalSales > 0) {
+                JournalService::journalDeliveryOrder(
+                    $totalSales,
+                    $totalHpp,
+                    $deliveryOrder->id,
+                    $deliveryOrder->created_by ?? auth()->id()
+                );
+
+                Log::info('DO Jurnal Created SUCCESS', [
+                    'do_id' => $deliveryOrder->id,
+                    'total_sales' => $totalSales,
+                    'total_hpp' => $totalHpp,
+                ]);
+            } else {
+                Log::warning('DO Jurnal SKIPPED', [
+                    'do_id' => $deliveryOrder->id,
+                    'existing_journal' => $existingJournal ? 'YES' : 'NO',
+                    'total_sales' => $totalSales,
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('DO Jurnal Error: ' . $e->getMessage(), [
+                'do_id' => $deliveryOrder->id,
+                'total_sales' => $totalSales,
+                'total_hpp' => $totalHpp,
+                'trace' => $e->getTraceAsString(),
+            ]);
+            throw $e;
+        }
     }
 
     protected function reverseDelivery(DeliveryOrder $deliveryOrder): void
     {
+        $deliveryOrder = $deliveryOrder->fresh(['details']);
+
         foreach ($deliveryOrder->details as $detail) {
-            StockService::addOutstanding($detail->product_id, 1, $detail->qty);
-
-            $product = Product::find($detail->product_id);
-            $costPrice = $product->last_buy_price ?? 0;
-
-            StockService::addStock(
-                $detail->product_id,
-                1,
-                $detail->qty,
-                $costPrice,
-                'IN',
-                DeliveryOrder::class,
-                $deliveryOrder->id,
-                'Reverse Surat Jalan ' . $deliveryOrder->do_number,
-                $deliveryOrder->created_by
-            );
-
-            $soDetail = SalesOrderDetail::where('so_id', $deliveryOrder->so_id)
-                ->where('product_id', $detail->product_id)
-                ->first();
+            $soDetail = null;
+            if ($detail->so_detail_id) {
+                $soDetail = SalesOrderDetail::find($detail->so_detail_id);
+            } elseif ($deliveryOrder->so_id) {
+                $soDetail = SalesOrderDetail::where('so_id', $deliveryOrder->so_id)
+                    ->where('product_id', $detail->product_id)
+                    ->first();
+            }
 
             if ($soDetail) {
                 $soDetail->delivered_qty = max(0, $soDetail->delivered_qty - $detail->qty);
                 $soDetail->remaining_qty = $soDetail->qty - $soDetail->delivered_qty;
-                $soDetail->save();
+                $soDetail->saveQuietly();
             }
         }
 
         $this->updateSalesOrderStatus($deliveryOrder->so_id);
+        $this->deleteJournals($deliveryOrder);
     }
 
-    protected function updateSalesOrderStatus(int $soId): void
+    protected function deleteJournals(DeliveryOrder $deliveryOrder): void
     {
+        JournalEntry::where('reference_type', DeliveryOrder::class)
+            ->where('reference_id', $deliveryOrder->id)
+            ->get()
+            ->each(function ($journal) {
+                $journal->details()->delete();
+                $journal->delete();
+            });
+    }
+
+    protected function updateSalesOrderStatus(?int $soId): void
+    {
+        if (!$soId) return;
+
         $so = SalesOrder::with('details')->find($soId);
         if (!$so) return;
 

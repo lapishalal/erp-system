@@ -46,10 +46,23 @@ class SalesOrderDetail extends Model
 
     protected static function booted(): void
     {
-        static::created(function (self $detail) {
-            self::updateOutstandingStock($detail, $detail->qty);
+        static::creating(function (self $detail) {
             $detail->remaining_qty = $detail->qty;
-            $detail->saveQuietly();
+        });
+
+        // =========================================================
+        // FIX: Gunakan Laravel app() container — persist 1 request
+        // Tidak bisa di-reset oleh Filament
+        // =========================================================
+        static::created(function (self $detail) {
+            $key = 'sod_outstanding_processed_' . $detail->id;
+
+            if (app()->bound($key)) {
+                return;
+            }
+
+            app()->instance($key, true);
+            self::updateOutstandingStock($detail, $detail->qty);
         });
 
         static::updated(function (self $detail) {
@@ -68,7 +81,7 @@ class SalesOrderDetail extends Model
         });
     }
 
-    protected static function updateOutstandingStock(self $detail, int $delta): void
+    public static function updateOutstandingStock(self $detail, int $delta): void
     {
         $so = $detail->salesOrder;
         if (!$so) {
@@ -104,9 +117,6 @@ class SalesOrderDetail extends Model
         return $this->belongsTo(Product::class, 'product_id');
     }
 
-    // =========================================================
-    // RELASI BARU: Delivery Order Details yang refer ke SO detail ini
-    // =========================================================
     public function deliveryOrderDetails(): HasMany
     {
         return $this->hasMany(DeliveryOrderDetail::class, 'so_detail_id');

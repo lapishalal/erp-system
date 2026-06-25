@@ -7,6 +7,7 @@ use App\Services\JournalService;
 
 class SalesInvoiceObserver
 {
+    /*
     public function created(SalesInvoice $salesInvoice): void
     {
         $totalHpp = 0;
@@ -19,6 +20,7 @@ class SalesInvoiceObserver
 
         JournalService::journalSalesInvoice($salesInvoice->total, $totalHpp, $salesInvoice->created_by ?? auth()->id());
     }
+    */
     
     public function updating(SalesInvoice $invoice): void
     {

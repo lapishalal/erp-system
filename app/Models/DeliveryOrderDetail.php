@@ -38,9 +38,18 @@ class DeliveryOrderDetail extends Model
             self::updateSalesOrderDetail($detail, $detail->qty);
 
             $do = $detail->deliveryOrder;
-            if ($do && in_array($do->status, ['SHIPPED', 'DELIVERED'])) {
-                self::updateStock($detail, $detail->qty);
-                self::updateOutstandingStock($detail, -$detail->qty);
+            if ($do) {
+                // =========================================================
+                // Reserve outstanding saat DRAFT (sebelum barang terkirim)
+                // =========================================================
+                if ($do->status === 'DRAFT') {
+                    self::updateOutstandingStock($detail, $detail->qty);
+                }
+                
+                if (in_array($do->status, ['SHIPPED', 'DELIVERED'])) {
+                    self::updateStock($detail, $detail->qty);
+                    self::updateOutstandingStock($detail, -$detail->qty);
+                }
             }
         });
 
@@ -58,19 +67,10 @@ class DeliveryOrderDetail extends Model
             }
         });
 
-        // =========================================================
-        // FIX: Saat detail dihapus, restore semua stok (apapun status DO)
-        // =========================================================
         static::deleted(function (self $detail) {
             self::updateParentTotal($detail->do_id);
-
-            // Kembalikan remaining_qty ke Sales Order
             self::updateSalesOrderDetail($detail, -$detail->qty);
-
-            // Kembalikan stok fisik ke gudang (apapun status)
             self::updateStock($detail, -$detail->qty);
-
-            // Kembalikan outstanding_stock
             self::updateOutstandingStock($detail, $detail->qty);
         });
     }
@@ -199,9 +199,6 @@ class DeliveryOrderDetail extends Model
             'notes' => 'Delivery Order #' . ($do->do_number ?? $do->id),
         ]);
         
-        // =========================================================
-        // FIX: Catat ke stock_transactions (Kartu Stok / Laporan Stok)
-        // =========================================================
         $soDetail = null;
         if ($detail->so_detail_id) {
             $soDetail = \App\Models\SalesOrderDetail::with('salesOrder.customer')->find($detail->so_detail_id);
@@ -216,7 +213,7 @@ class DeliveryOrderDetail extends Model
             'type' => 'OUT',
             'reference_type' => self::class,
             'reference_id' => $detail->do_id,
-            'qty' => -abs($detail->qty),  // Negatif untuk keluar
+            'qty' => -abs($detail->qty),
             'price' => $unitPrice,
             'remaining_stock' => $stock->physical_stock,
             'notes' => 'DO #' . ($do->do_number ?? $do->id) . ' | Customer: ' . $customerName,

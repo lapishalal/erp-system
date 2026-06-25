@@ -14,6 +14,7 @@ class JournalEntry extends Model
     use HasFactory, Auditable, BelongsToTenant;
 
     protected $fillable = [
+        'tenant_id',
         'date',
         'reference_type',
         'reference_id',

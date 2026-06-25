@@ -271,8 +271,10 @@ class SalesInvoiceResource extends Resource
                         }),
 
                     Tables\Actions\ViewAction::make(),
-                    Tables\Actions\EditAction::make(),
-                    Tables\Actions\DeleteAction::make(),
+                    Tables\Actions\EditAction::make()
+                        ->visible(fn (SalesInvoice $record): bool => $record->status === 'UNPAID'),
+                    Tables\Actions\DeleteAction::make()
+                        ->visible(fn (SalesInvoice $record): bool => $record->status === 'UNPAID'),
                 ]),
             ])
             ->bulkActions([
