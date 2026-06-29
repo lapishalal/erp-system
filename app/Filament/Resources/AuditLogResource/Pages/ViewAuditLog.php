@@ -39,7 +39,7 @@ class ViewAuditLog extends ViewRecord
                     ]),
 
                 Section::make('Data Lama (Old Values)')
-                    ->visible(fn (AuditLog $record): bool => !empty($record->old_values))
+                    ->visible(fn (\App\Models\AuditLog $record): bool => !empty($record->old_values))
                     ->schema([
                         TextEntry::make('old_values')
                             ->label(false)
@@ -53,7 +53,7 @@ class ViewAuditLog extends ViewRecord
                     ]),
 
                 Section::make('Data Baru (New Values)')
-                    ->visible(fn (AuditLog $record): bool => !empty($record->new_values))
+                    ->visible(fn (\App\Models\AuditLog $record): bool => !empty($record->new_values))
                     ->schema([
                         TextEntry::make('new_values')
                             ->label(false)

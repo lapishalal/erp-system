@@ -4,10 +4,14 @@ namespace App\Models;
 
 use App\Enums\MarketplacePlatform;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Traits\BelongsToTenant;
 
 class MarketplaceOrder extends Model
 {
+    
+    use BelongsToTenant;
     protected $fillable = [
         'tenant_id',
         'connection_id',
@@ -41,5 +45,10 @@ class MarketplaceOrder extends Model
     public function salesOrder(): BelongsTo
     {
         return $this->belongsTo(SalesOrder::class, 'sales_order_id');
+    }
+    
+    public function items(): HasMany
+    {
+        return $this->hasMany(MarketplaceOrderItem::class, 'marketplace_order_id');
     }
 }

@@ -44,11 +44,6 @@ class ProductResource extends Resource
                             ->label('Nama Barang')
                             ->required()
                             ->maxLength(255),
-                        Forms\Components\TextInput::make('sku')
-                            ->label('SKU Marketplace (TikTok/Shopee)')
-                            ->unique(ignoreRecord: true)
-                            ->maxLength(100)
-                            ->helperText('Isi dengan Seller SKU dari TikTok Shop untuk auto-mapping order'),
                         Forms\Components\Select::make('brand_id')
                             ->label('Brand')
                             ->relationship('brand', 'name')
@@ -108,12 +103,6 @@ class ProductResource extends Resource
                     ->label('Kode')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('sku')
-                    ->label('SKU MP')
-                    ->searchable()
-                    ->sortable()
-                    ->placeholder('-')
-                    ->tooltip('SKU Marketplace (TikTok/Shopee)'),
                 Tables\Columns\TextColumn::make('name')
                     ->label('Nama')
                     ->searchable()

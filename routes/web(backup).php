@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\PosController;
-use App\Http\Controllers\TikTokImportController;
 use App\Exports\BalanceSheetExport;
 use App\Exports\ProfitLossExport;
 use App\Exports\SalesReportExport;
@@ -73,16 +72,3 @@ Route::get('/payroll/{payroll}/print', function (\App\Models\Payroll $payroll) {
     $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.payroll', compact('payroll'));
     return $pdf->stream('slip-gaji-' . $payroll->payroll_number . '.pdf');
 })->name('payroll.print');
-
-// TikTok Import API Routes (used by Filament page)
-Route::middleware(['auth'])->group(function () {
-    Route::post('/tiktok-import/orders', [TikTokImportController::class, 'importOrders']);
-    Route::post('/tiktok-import/income', [TikTokImportController::class, 'importIncome']);
-
-// Manual product mapping endpoints
-    Route::post('/tiktok-import/map-item', [TikTokImportController::class, 'mapItem']);
-    Route::post('/tiktok-import/map-item-new-product', [TikTokImportController::class, 'mapItemWithNewProduct']);
-    Route::post('/tiktok-import/auto-match-all', [TikTokImportController::class, 'autoMatchAll']);
-    Route::post('/tiktok-import/process-mapped-orders', [TikTokImportController::class, 'processMappedOrders']);
-    Route::get('/tiktok-import/unmapped-items', [TikTokImportController::class, 'getUnmappedItems']);
-});
