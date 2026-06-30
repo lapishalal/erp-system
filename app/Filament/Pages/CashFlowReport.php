@@ -9,6 +9,7 @@ use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Form;
 use Filament\Pages\Page;
+use Carbon\Carbon;
 
 class CashFlowReport extends Page implements HasForms
 {
@@ -57,6 +58,24 @@ class CashFlowReport extends Page implements HasForms
             ->statePath('data');
     }
 
+    /**
+     * PERBAIKAN AKUNTANSI (PRIORITAS TINGGI):
+     * Menghitung Saldo Awal Kas & Bank secara kumulatif dari seluruh transaksi CashIn & CashOut
+     * sebelum tanggal 1 bulan berjalan yang sedang difilter.
+     */
+    public function getSaldoAwal(): float
+    {
+        $year = $this->data['year'] ?? now()->year;
+        $month = $this->data['month'] ?? now()->month;
+        
+        $startOfMonth = Carbon::create($year, $month, 1)->startOfMonth()->toDateString();
+        
+        $totalInBefore = (float) CashIn::whereDate('date', '<', $startOfMonth)->sum('amount');
+        $totalOutBefore = (float) CashOut::whereDate('date', '<', $startOfMonth)->sum('amount');
+        
+        return $totalInBefore - $totalOutBefore;
+    }
+
     public function getCashInQuery()
     {
         return CashIn::with('customer')
@@ -92,5 +111,10 @@ class CashFlowReport extends Page implements HasForms
     public function getNetCashFlow(): float
     {
         return $this->getTotalCashIn() - $this->getTotalCashOut();
+    }
+
+    public function getSaldoAkhir(): float
+    {
+        return $this->getSaldoAwal() + $this->getNetCashFlow();
     }
 }

@@ -5,6 +5,8 @@ namespace App\Exports;
 use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\WithHeadings;
+use App\Filament\Resources\BalanceSheetResource;
+use Carbon\Carbon;
 
 class BalanceSheetExport implements FromArray, WithHeadings
 {
@@ -25,7 +27,13 @@ class BalanceSheetExport implements FromArray, WithHeadings
     public function array(): array
     {
         $data = [];
+        $endDate = Carbon::create($this->year, $this->month)->endOfMonth()->toDateString();
 
+        // =====================================================================
+        // PERBAIKAN AKUNTANSI (PRIORITAS TINGGI):
+        // Neraca harus bersifat kumulatif (whereDate <= endDate) dari awal berdirinya perusahaan,
+        // bukan hanya transaksi dalam bulan terpilih.
+        // =====================================================================
         $results = DB::table('journal_entry_details')
             ->select('journal_entry_details.account_id', 'accounts.code', 'accounts.name', 'accounts.type', 'accounts.normal_balance')
             ->selectRaw('SUM(journal_entry_details.debit) as total_debit')
@@ -33,8 +41,7 @@ class BalanceSheetExport implements FromArray, WithHeadings
             ->join('journal_entries', 'journal_entries.id', '=', 'journal_entry_details.journal_id')
             ->join('accounts', 'accounts.id', '=', 'journal_entry_details.account_id')
             ->whereIn('accounts.type', ['ASSET', 'LIABILITY', 'EQUITY'])
-            ->whereYear('journal_entries.date', $this->year)
-            ->whereMonth('journal_entries.date', $this->month)
+            ->whereDate('journal_entries.date', '<=', $endDate)
             ->groupBy('journal_entry_details.account_id')
             ->orderBy('accounts.code')
             ->get();
@@ -58,6 +65,44 @@ class BalanceSheetExport implements FromArray, WithHeadings
                 $saldo,
             ];
         }
+
+        // =====================================================================
+        // PERBAIKAN AKUNTANSI (PRIORITAS TINGGI):
+        // Menambahkan Laba Rugi Berjalan (Current Earnings) ke dalam Ekuitas di Excel
+        // agar ringkasan Neraca di Excel seimbang (Balance).
+        // =====================================================================
+        $currentEarnings = BalanceSheetResource::getCurrentEarnings($this->year, $this->month);
+        $data[] = [
+            'MODAL',
+            '3-10003', // Kode akun virtual/sementara untuk Laba Tahun Berjalan
+            'Laba Rugi Tahun Berjalan',
+            0,
+            0,
+            $currentEarnings
+        ];
+
+        // Summary Cards
+        $asset = BalanceSheetResource::getTotalByType('ASSET', $this->year, $this->month);
+        $liability = BalanceSheetResource::getTotalByType('LIABILITY', $this->year, $this->month);
+        $equity = BalanceSheetResource::getTotalByType('EQUITY', $this->year, $this->month);
+        $totalEquityPlusEarnings = $equity + $currentEarnings;
+        $balance = $asset - ($liability + $totalEquityPlusEarnings);
+
+        $data[] = ['', '', '', '', '', ''];
+        $data[] = ['RINGKASAN NERACA', '', '', '', '', ''];
+        $data[] = ['Total Aset', '', '', '', '', $asset];
+        $data[] = ['Total Kewajiban', '', '', '', '', $liability];
+        $data[] = ['Total Modal (Sblm Laba Berjalan)', '', '', '', '', $equity];
+        $data[] = ['Laba Rugi Tahun Berjalan', '', '', '', '', $currentEarnings];
+        $data[] = ['Total Modal + Laba Berjalan', '', '', '', '', $totalEquityPlusEarnings];
+        $data[] = [
+            'Check Balance', 
+            '', 
+            '', 
+            '', 
+            '', 
+            abs($balance) < 1 ? 'BALANCED' : 'SELISIH: ' . $balance
+        ];
 
         return $data;
     }

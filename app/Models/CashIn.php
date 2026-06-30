@@ -51,10 +51,16 @@ class CashIn extends Model
         $account = $cashIn->account;
         if (!$account) return;
 
-        // Tentukan akun kredit berdasarkan type
+        // =====================================================================
+        // PERBAIKAN AKUNTANSI (PRIORITAS TINGGI):
+        // Jika kas masuk adalah CUSTOMER_PAYMENT (pembayaran piutang oleh pelanggan),
+        // maka akun kredit yang benar adalah "Piutang Usaha" (1-10003), BUKAN "Penjualan" (4-10001).
+        // Jika dikreditkan ke Penjualan, akan terjadi pencatatan ganda (double-counting)
+        // karena pendapatan sudah diakui saat Delivery Order / Invoice dibuat.
+        // =====================================================================
         $creditAccountId = match ($cashIn->type) {
-            'CUSTOMER_PAYMENT' => self::getAccountIdByCode('4-10001'), // Penjualan
-            'OTHER_INCOME' => self::getAccountIdByCode('4-20001'), // Pendapatan Lain
+            'CUSTOMER_PAYMENT' => self::getAccountIdByCode('1-10003'), // Kredit Piutang Usaha (1-10003)
+            'OTHER_INCOME' => self::getAccountIdByCode('4-20001'),     // Kredit Pendapatan Lain-lain (4-20001)
             default => null,
         };
 
@@ -71,7 +77,7 @@ class CashIn extends Model
             'created_by' => $cashIn->created_by,
         ]);
 
-        // Debit: Kas/Bank
+        // Debit: Kas/Bank (Akun penerima kas)
         $journal->details()->create([
             'account_id' => $cashIn->account_id,
             'debit' => $cashIn->amount,
@@ -79,12 +85,12 @@ class CashIn extends Model
             'description' => 'Kas/Bank masuk',
         ]);
 
-        // Kredit: Penjualan / Pendapatan Lain
+        // Kredit: Piutang Usaha / Pendapatan Lain
         $journal->details()->create([
             'account_id' => $creditAccountId,
             'debit' => 0,
             'credit' => $cashIn->amount,
-            'description' => $cashIn->type === 'CUSTOMER_PAYMENT' ? 'Pendapatan penjualan' : 'Pendapatan lain-lain',
+            'description' => $cashIn->type === 'CUSTOMER_PAYMENT' ? 'Pengurangan Piutang (Pelunasan)' : 'Pendapatan lain-lain',
         ]);
 
         // Update invoice paid_amount kalau CUSTOMER_PAYMENT

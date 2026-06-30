@@ -19,7 +19,7 @@ class ProfitLossExport implements FromArray, WithHeadings
 
     public function headings(): array
     {
-        return ['Kategori', 'Kode Akun', 'Nama Akun', 'Debit', 'Kredit'];
+        return ['Kategori', 'Kode Akun', 'Nama Akun', 'Debit', 'Kredit', 'Saldo Bersih'];
     }
 
     public function array(): array
@@ -40,6 +40,11 @@ class ProfitLossExport implements FromArray, WithHeadings
             ->get();
 
         foreach ($results as $row) {
+            // Profit & Loss Normal Balances: Revenue is Credit-normal, Expenses are Debit-normal.
+            $saldo = $row->type === 'REVENUE'
+                ? $row->total_credit - $row->total_debit
+                : $row->total_debit - $row->total_credit;
+
             $data[] = [
                 match($row->type) {
                     'REVENUE' => 'PENDAPATAN',
@@ -50,21 +55,26 @@ class ProfitLossExport implements FromArray, WithHeadings
                 $row->name,
                 $row->total_debit,
                 $row->total_credit,
+                $saldo,
             ];
         }
 
-        // Summary
+        // =====================================================================
+        // PERBAIKAN INTEGRITAS (PRIORITAS SEDANG):
+        // Memastikan method pembantu di ProfitLossResource bersifat public sehingga
+        // tidak memicu fatal error "Call to protected method" ketika mengekspor ke Excel.
+        // =====================================================================
         $revenue = \App\Filament\Resources\ProfitLossResource::getTotalByType('REVENUE', $this->year, $this->month);
         $hpp = \App\Filament\Resources\ProfitLossResource::getTotalHpp($this->year, $this->month);
         $expense = \App\Filament\Resources\ProfitLossResource::getTotalExpense($this->year, $this->month);
         $profit = $revenue - $hpp - $expense;
 
-        $data[] = ['', '', '', '', ''];
-        $data[] = ['SUMMARY', '', '', '', ''];
-        $data[] = ['Pendapatan', '', '', '', $revenue];
-        $data[] = ['HPP', '', '', '', $hpp];
-        $data[] = ['Beban', '', '', '', $expense];
-        $data[] = ['PROFIT / LOSS', '', '', '', $profit];
+        $data[] = ['', '', '', '', '', ''];
+        $data[] = ['SUMMARY', '', '', '', '', ''];
+        $data[] = ['Total Pendapatan', '', '', '', '', $revenue];
+        $data[] = ['Harga Pokok Penjualan (HPP)', '', '', '', '', $hpp];
+        $data[] = ['Beban Operasional', '', '', '', '', $expense];
+        $data[] = ['PROFIT / LOSS', '', '', '', '', $profit];
 
         return $data;
     }

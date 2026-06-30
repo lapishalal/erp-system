@@ -34,7 +34,13 @@ class SalesReportResource extends Resource
     {
         return $table
             ->modifyQueryUsing(function (Builder $query) {
-                return $query->with(['customer', 'details.product.brand']);
+                // =====================================================================
+                // PERBAIKAN AKUNTANSI (PRIORITAS SEDANG):
+                // Mengecualikan status 'CANCEL' dari Laporan Penjualan murni karena transaksi
+                // yang dibatalkan tidak menghasilkan omset/profit nyata.
+                // =====================================================================
+                return $query->where('status', '!=', 'CANCEL')
+                    ->with(['customer', 'details.product.brand']);
             })
             ->columns([
                 Tables\Columns\TextColumn::make('so_number')
@@ -55,7 +61,7 @@ class SalesReportResource extends Resource
                 Tables\Columns\TextColumn::make('details.product.name')
                     ->label('Nama Produk')
                     ->searchable()
-					->sortable()
+                    ->sortable()
                     ->placeholder('-'),
 
                 Tables\Columns\TextColumn::make('total_qty')
@@ -67,7 +73,7 @@ class SalesReportResource extends Resource
                     ->label('Total Omset')
                     ->money('IDR')
                     ->alignEnd()
-					->sortable()
+                    ->sortable()
                     ->summarize([
                         Tables\Columns\Summarizers\Sum::make()
                             ->money('IDR')
@@ -90,7 +96,7 @@ class SalesReportResource extends Resource
                     ->money('IDR')
                     ->alignEnd()
                     ->color('success')
-					->sortable()
+                    ->sortable()
                     ->summarize([
                         Tables\Columns\Summarizers\Sum::make()
                             ->money('IDR')
@@ -124,7 +130,7 @@ class SalesReportResource extends Resource
                         Forms\Components\DatePicker::make('dari')
                             ->label('Dari Tanggal')
                             ->default(now()->startOfMonth()),
-                        Forms\Components\DatePicker::make('sampai')
+                        Forms\Components::DatePicker::make('sampai')
                             ->label('Sampai Tanggal')
                             ->default(now()->endOfMonth()),
                     ])
@@ -151,7 +157,7 @@ class SalesReportResource extends Resource
 
                 Tables\Filters\Filter::make('brand')
                     ->form([
-                        Forms\Components\Select::make('brand_id')
+                        Forms\Components::Select::make('brand_id')
                             ->label('Brand')
                             ->options(\App\Models\Brand::pluck('name', 'id'))
                             ->searchable()
@@ -167,7 +173,7 @@ class SalesReportResource extends Resource
 
                 Tables\Filters\Filter::make('product')
                     ->form([
-                        Forms\Components\Select::make('product_id')
+                        Forms\Components::Select::make('product_id')
                             ->label('Produk')
                             ->options(\App\Models\Product::pluck('name', 'id'))
                             ->searchable()
@@ -188,13 +194,24 @@ class SalesReportResource extends Resource
                     ->icon('heroicon-o-funnel'),
             )
             ->headerActions([
+                // =====================================================================
+                // PERBAIKAN PROGRAMATIK (PRIORITAS SEDANG):
+                // Meneruskan parameter filter yang sedang aktif dari Filament Table ke Route Export
+                // agar file excel yang diunduh sesuai dengan data yang sedang ditampilkan di layar.
+                // =====================================================================
                 Tables\Actions\Action::make('exportExcel')
                     ->label('Export Excel')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('success')
-                    ->action(function () {
-                        return redirect()->route('sales-report.export');
-                    }),
+                    ->url(fn () => route('sales-report.export', [
+                        'dari' => request()->input('tableFilters.periode.dari'),
+                        'sampai' => request()->input('tableFilters.periode.sampai'),
+                        'customer_id' => request()->input('tableFilters.customer_id.value'),
+                        'status' => request()->input('tableFilters.status.value'),
+                        'brand_id' => request()->input('tableFilters.brand.brand_id'),
+                        'product_id' => request()->input('tableFilters.product.product_id'),
+                    ]))
+                    ->openUrlInNewTab(),
             ])
             ->actions([
                 Tables\Actions\Action::make('viewDetail')
