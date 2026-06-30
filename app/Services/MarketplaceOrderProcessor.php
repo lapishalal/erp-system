@@ -57,7 +57,7 @@ class MarketplaceOrderProcessor
                     'product_id' => $product->id,
                     'qty' => (int) ($item['qty'] ?? $item['quantity'] ?? 1),
                     'unit_price' => (float) ($item['price'] ?? $item['sale_price'] ?? $item['unit_price'] ?? 0),
-                    'cost_price' => $product->cost_price ?? 0,
+                    'cost_price' => $product->last_buy_price ?? 0,
                 ];
             }
 

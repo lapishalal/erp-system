@@ -80,7 +80,7 @@ class TikTokOrderProcessingService
                     throw new \Exception("Item ID {$item->id} tidak memiliki mapped product");
                 }
 
-                $costPrice = (float) ($product->last_buy_price ?? 0);
+                $costPrice = $product->getHpp();
                 $subtotal = (float) ($item->subtotal_after_discount ?? ($item->unit_price * $item->quantity));
                 $unitPrice = (float) ($item->unit_price ?? ($item->quantity > 0 ? $subtotal / $item->quantity : 0));
 

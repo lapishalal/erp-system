@@ -52,8 +52,8 @@ class SalesReportResource extends Resource
                     ->searchable()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('details.product.brand.name')
-                    ->label('Brand')
+                Tables\Columns\TextColumn::make('details.product.name')
+                    ->label('Nama Produk')
                     ->searchable()
 					->sortable()
                     ->placeholder('-'),

@@ -284,7 +284,7 @@ class TikTokIncomeImportService
                 }
 
                 if ($product) {
-                    $costPrice = (float) ($product->last_buy_price ?? 0);
+                    $costPrice = $product->getHpp();
                     // For income-only imports, unit price is estimated from gross revenue / qty
                     $unitPrice = count($productDetails) === 1
                         ? $revenueGross / $pd['qty']

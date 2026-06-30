@@ -36,6 +36,24 @@ class Product extends Model
         'min_stock' => 'integer',
         'is_active' => 'boolean',
     ];
+    
+    /**
+    * Get HPP (cost price) with fallback to product_buy_prices.
+    * Priority: 1) last_buy_price  2) latest product_buy_prices.buy_price  3) 0
+    */
+    public function getHpp(): float
+    {
+        if ($this->last_buy_price > 0) {
+            return (float) $this->last_buy_price;
+        }
+
+        $latestBuyPrice = $this->buyPrices()
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->value('buy_price');
+
+        return (float) ($latestBuyPrice ?? 0);
+    }
 
     public function brand(): BelongsTo
     {
