@@ -19,6 +19,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
 
 class TikTokUnmappedProductPage extends Page implements HasTable
@@ -74,8 +75,11 @@ class TikTokUnmappedProductPage extends Page implements HasTable
 
     public function getTableQuery(): Builder
     {
-        $query = MarketplaceOrderItem::query()
+        $query = MarketplaceOrderItem::unmapped()
             ->with(['marketplaceOrder', 'mappedProduct']);
+
+        \Illuminate\Support\Facades\Log::info('Unmapped query SQL: ' . $query->toSql());
+        \Illuminate\Support\Facades\Log::info('Unmapped count: ' . $query->count());
 
         if (!$this->showAllItems) {
             $query->where('is_mapped', false);
@@ -172,8 +176,9 @@ class TikTokUnmappedProductPage extends Page implements HasTable
                         'CANCEL' => 'Dibatalkan',
                     ])
                     ->query(function ($query, $state) {
-                        if (filled($state)) {
-                            $query->whereHas('marketplaceOrder', fn($q) => $q->where('status', $state));
+                        $value = $state['value'] ?? null;
+                        if (filled($value)) {
+                            $query->whereHas('marketplaceOrder', fn($q) => $q->where('status', $value));
                         }
                     }),
             ])
