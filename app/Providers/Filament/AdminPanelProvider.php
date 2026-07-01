@@ -76,6 +76,7 @@ class AdminPanelProvider extends PanelProvider
 				\App\Filament\Pages\ExecutiveDashboard::class,
 				\App\Filament\Pages\TikTokImportPage::class,
                 \App\Filament\Pages\TikTokUnmappedProductPage::class,
+                \App\Filament\Pages\CustomerReportPage::class,
             ])
             ->widgets([
                 \App\Filament\Widgets\DashboardStats::class,
