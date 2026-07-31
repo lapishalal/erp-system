@@ -13,6 +13,8 @@ class CreateDeliveryOrder extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
+        $isDropship = (bool) ($data['is_dropship'] ?? false);
+
         // Filter hanya item dengan qty > 0
         $filtered = [];
         foreach ($data['details'] ?? [] as $item) {
@@ -23,13 +25,18 @@ class CreateDeliveryOrder extends CreateRecord
 
             // Validasi max
             $soDetail = SalesOrderDetail::find($item['so_detail_id'] ?? null);
-            $stock = ProductStock::where('product_id', $item['product_id'] ?? null)
-                ->where('warehouse_id', $data['warehouse_id'] ?? null)
-                ->first();
-
             $remaining = $soDetail ? $soDetail->remaining_qty : 0;
-            $available = $stock ? $stock->available_stock : 0;
-            $max = min($remaining, $available);
+
+            // Dropship tidak perlu stok gudang
+            if ($isDropship) {
+                $max = $remaining;
+            } else {
+                $stock = ProductStock::where('product_id', $item['product_id'] ?? null)
+                    ->where('warehouse_id', $data['warehouse_id'] ?? null)
+                    ->first();
+                $available = $stock ? $stock->available_stock : 0;
+                $max = min($remaining, $available);
+            }
 
             if ($qty > $max) {
                 $qty = $max;

@@ -27,6 +27,8 @@ class SalesOrder extends Model
         'created_by',
         'approved_by',
         'source',
+        'is_dropship',
+        'dropship_supplier_id',
     ];
 
     protected $casts = [
@@ -35,6 +37,7 @@ class SalesOrder extends Model
         'total_amount' => 'decimal:2',
         'total_cost' => 'decimal:2',
         'profit' => 'decimal:2',
+        'is_dropship' => 'boolean',
     ];
 
     // =========================================================
@@ -85,5 +88,10 @@ class SalesOrder extends Model
     public function approver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function dropshipSupplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class, 'dropship_supplier_id');
     }
 }

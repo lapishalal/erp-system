@@ -43,6 +43,7 @@ class MarketplaceDeliveryOrderCreator
                 'warehouse_id' => $warehouseId,
                 'status' => 'DRAFT',
                 'total_qty' => $totalQty,
+                'is_dropship' => $salesOrder->is_dropship,
                 'notes' => "Auto-generated from {$salesOrder->source} SO: {$salesOrder->so_number}",
                 'driver' => null,
                 'vehicle' => null,

@@ -58,6 +58,11 @@ class DeliveryOrderObserver
 
     protected function processDelivery(DeliveryOrder $deliveryOrder): void
     {
+        if ($deliveryOrder->is_dropship) {
+            Log::info('DO processDelivery SKIPPED (dropship)', ['do_id' => $deliveryOrder->id]);
+            return;
+        }
+
         $deliveryOrder = $deliveryOrder->fresh(['details']);
 
         $totalHpp = 0;
@@ -148,6 +153,11 @@ class DeliveryOrderObserver
 
     protected function reverseDelivery(DeliveryOrder $deliveryOrder): void
     {
+        if ($deliveryOrder->is_dropship) {
+            Log::info('DO reverseDelivery SKIPPED (dropship)', ['do_id' => $deliveryOrder->id]);
+            return;
+        }
+
         $deliveryOrder = $deliveryOrder->fresh(['details']);
 
         foreach ($deliveryOrder->details as $detail) {

@@ -59,9 +59,16 @@ class DeliveryOrderResource extends Resource
         }
     }
 
-    private static function loadPendingItems(?int $customerId, ?int $warehouseId, Set $set, $livewire): void
+    private static function loadPendingItems(?int $customerId, ?int $warehouseId, bool $isDropship, Set $set, $livewire): void
     {
-        if (!$customerId || !$warehouseId) {
+        if (!$customerId) {
+            $set('details', []);
+            $set('total_qty', 0);
+            return;
+        }
+
+        // Untuk pengiriman normal wajib pilih gudang dulu
+        if (!$isDropship && !$warehouseId) {
             $set('details', []);
             $set('total_qty', 0);
             return;
@@ -71,9 +78,10 @@ class DeliveryOrderResource extends Resource
             return;
         }
 
-        $details = SalesOrderDetail::whereHas('salesOrder', function ($q) use ($customerId) {
+        $details = SalesOrderDetail::whereHas('salesOrder', function ($q) use ($customerId, $isDropship) {
                 $q->where('customer_id', $customerId)
-                  ->whereIn('status', ['OPEN', 'PARTIAL']);
+                  ->whereIn('status', ['OPEN', 'PARTIAL'])
+                  ->where('is_dropship', $isDropship);
             })
             ->where('remaining_qty', '>', 0)
             ->with(['product', 'salesOrder'])
@@ -82,9 +90,12 @@ class DeliveryOrderResource extends Resource
 
         $data = [];
         foreach ($details as $d) {
-            $stock = ProductStock::where('product_id', $d->product_id)
-                ->where('warehouse_id', $warehouseId)
-                ->first();
+            $stock = null;
+            if ($warehouseId) {
+                $stock = ProductStock::where('product_id', $d->product_id)
+                    ->where('warehouse_id', $warehouseId)
+                    ->first();
+            }
 
             $data[] = [
                 'so_detail_id' => $d->id,
@@ -122,6 +133,15 @@ class DeliveryOrderResource extends Resource
                             ->required()
                             ->default(now()),
 
+                        Forms\Components\Toggle::make('is_dropship')
+                            ->label('Dropship (dikirim langsung supplier)')
+                            ->reactive()
+                            ->afterStateUpdated(function ($state, Set $set, Get $get, $livewire) {
+                                $set('warehouse_id', null);
+                                self::loadPendingItems($get('customer_id'), null, (bool) $state, $set, $livewire);
+                            })
+                            ->disabled(fn (string $operation): bool => $operation === 'edit'),
+
                         Forms\Components\Select::make('customer_id')
                             ->label('Customer')
                             ->options(Customer::pluck('name', 'id'))
@@ -129,7 +149,7 @@ class DeliveryOrderResource extends Resource
                             ->required()
                             ->live()
                             ->afterStateUpdated(function ($state, Set $set, Get $get, $livewire) {
-                                self::loadPendingItems($state, $get('warehouse_id'), $set, $livewire);
+                                self::loadPendingItems($state, $get('warehouse_id'), (bool) $get('is_dropship'), $set, $livewire);
                             })
                             ->disabled(fn (string $operation): bool => $operation === 'edit'),
 
@@ -137,10 +157,11 @@ class DeliveryOrderResource extends Resource
                             ->label('Gudang')
                             ->options(Warehouse::pluck('name', 'id'))
                             ->searchable()
-                            ->required()
+                            ->required(fn (Get $get): bool => !(bool) $get('is_dropship'))
+                            ->hidden(fn (Get $get): bool => (bool) $get('is_dropship'))
                             ->live()
                             ->afterStateUpdated(function ($state, Set $set, Get $get, $livewire) {
-                                self::loadPendingItems($get('customer_id'), $state, $set, $livewire);
+                                self::loadPendingItems($get('customer_id'), $state, (bool) $get('is_dropship'), $set, $livewire);
                             })
                             ->disabled(fn (string $operation): bool => $operation === 'edit'),
 
@@ -167,7 +188,7 @@ class DeliveryOrderResource extends Resource
                     ])->columns(2),
 
                 Forms\Components\Section::make('Detail Barang dari Sales Order')
-                    ->visible(fn (Get $get) => filled($get('customer_id')) && filled($get('warehouse_id')))
+                    ->visible(fn (Get $get) => filled($get('customer_id')) && ((bool) $get('is_dropship') || filled($get('warehouse_id'))))
                     ->schema([
                         Forms\Components\Repeater::make('details')
                             ->relationship('details')
@@ -199,6 +220,7 @@ class DeliveryOrderResource extends Resource
                                     ->numeric()
                                     ->disabled()
                                     ->dehydrated(false)
+                                    ->hidden(fn (Get $get): bool => (bool) $get('../../is_dropship'))
                                     ->hint(function (Get $get) {
                                         $remaining = (int) ($get('remaining_qty') ?? 0);
                                         $stock = (int) ($get('available_stock') ?? 0);
@@ -225,8 +247,8 @@ class DeliveryOrderResource extends Resource
                                     })
                                     ->hint(function (Get $get) {
                                         $remaining = (int) ($get('remaining_qty') ?? 0);
-                                        $stock = (int) ($get('available_stock') ?? 0);
-                                        $max = min($remaining, $stock);
+                                        $isDropship = (bool) $get('../../is_dropship');
+                                        $max = $isDropship ? $remaining : min($remaining, (int) ($get('available_stock') ?? 0));
                                         return "Max: {$max} unit";
                                     }),
 
@@ -244,6 +266,7 @@ class DeliveryOrderResource extends Resource
                                     ->numeric()
                                     ->disabled()
                                     ->dehydrated(false)
+                                    ->hidden(fn (Get $get): bool => (bool) $get('../../is_dropship'))
                                     ->suffix(function (?int $state): string {
                                         if ($state === null) return '';
                                         if ($state < 0) return '❌';
@@ -290,6 +313,14 @@ class DeliveryOrderResource extends Resource
                     ->date('d M Y'),
                 Tables\Columns\TextColumn::make('customer.name')
                     ->label('Customer'),
+                Tables\Columns\IconColumn::make('is_dropship')
+                    ->label('Dropship')
+                    ->boolean()
+                    ->trueIcon('heroicon-o-rocket-launch')
+                    ->falseIcon('heroicon-o-x-mark')
+                    ->trueColor('warning')
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('warehouse.name')
                     ->label('Gudang'),
                 Tables\Columns\TextColumn::make('status')

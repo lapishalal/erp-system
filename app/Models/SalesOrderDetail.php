@@ -84,7 +84,7 @@ class SalesOrderDetail extends Model
     public static function updateOutstandingStock(self $detail, int $delta): void
     {
         $so = $detail->salesOrder;
-        if (!$so) {
+        if (!$so || $so->is_dropship) {
             return;
         }
 

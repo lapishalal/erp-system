@@ -30,7 +30,6 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Blue,
             ])
-            ->viteTheme('resources/css/app.css')
             ->resources([
                 \App\Filament\Resources\BrandResource::class,
                 \App\Filament\Resources\CategoryResource::class,

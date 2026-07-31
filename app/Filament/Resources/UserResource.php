@@ -130,7 +130,7 @@ class UserResource extends Resource
                         Forms\Components\Placeholder::make('telegram_status')
                             ->label('Status')
                             ->content(function ($record) {
-                                if ($record->telegram_chat_id) {
+                                if ($record && $record->telegram_chat_id) {
                                     return new \Illuminate\Support\HtmlString('✅ <span class="text-success-600 font-bold">Terhubung</span>');
                                 }
                                 return new \Illuminate\Support\HtmlString('❌ <span class="text-danger-600">Belum terhubung</span>');
@@ -138,12 +138,13 @@ class UserResource extends Resource
 
         Forms\Components\Placeholder::make('telegram_chat_id')
             ->label('Chat ID')
-            ->visible(fn ($record) => !empty($record->telegram_chat_id))
-            ->content(fn ($record) => $record->telegram_chat_id),
+            ->visible(fn ($record) => $record && !empty($record->telegram_chat_id))
+            ->content(fn ($record) => $record ? $record->telegram_chat_id : '-'),
 
         Forms\Components\Actions::make([
             Forms\Components\Actions\Action::make('generate_link_code')
-                ->label(fn ($record) => $record->telegram_chat_id ? 'Ganti Koneksi' : 'Hubungkan Telegram')
+                ->visible(fn ($record) => $record !== null)
+                ->label(fn ($record) => $record && $record->telegram_chat_id ? 'Ganti Koneksi' : 'Hubungkan Telegram')
                 ->icon('heroicon-o-link')
                 ->color('primary')
                 ->form([

@@ -26,11 +26,13 @@ class DeliveryOrder extends Model
         'driver',
         'vehicle',
         'created_by',
+        'is_dropship',
     ];
 
     protected $casts = [
         'date' => 'date',
         'total_qty' => 'integer',
+        'is_dropship' => 'boolean',
     ];
 
     protected static function booted(): void

@@ -148,7 +148,12 @@ class DeliveryOrderDetail extends Model
 
     protected static function updateOutstandingStock(self $detail, int $delta): void
     {
-        $warehouseId = $detail->deliveryOrder?->warehouse_id ?? 1;
+        $do = $detail->deliveryOrder;
+        if ($do && $do->is_dropship) {
+            return;
+        }
+
+        $warehouseId = $do?->warehouse_id ?? 1;
 
         $stock = \App\Models\ProductStock::where('product_id', $detail->product_id)
             ->where('warehouse_id', $warehouseId)
@@ -166,7 +171,7 @@ class DeliveryOrderDetail extends Model
     public static function updateStock(self $detail, int $delta): void
     {
         $do = $detail->deliveryOrder;
-        if (!$do || !$do->warehouse_id) {
+        if (!$do || !$do->warehouse_id || $do->is_dropship) {
             return;
         }
 

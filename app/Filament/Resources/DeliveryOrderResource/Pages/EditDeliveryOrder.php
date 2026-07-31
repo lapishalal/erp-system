@@ -44,6 +44,8 @@ class EditDeliveryOrder extends EditRecord
 
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
+        $isDropship = (bool) $record->is_dropship;
+
         // Filter hanya item dengan qty > 0
         $filtered = [];
         foreach ($data['details'] ?? [] as $item) {
@@ -54,13 +56,18 @@ class EditDeliveryOrder extends EditRecord
 
             // Validasi max
             $soDetail = SalesOrderDetail::find($item['so_detail_id'] ?? null);
-            $stock = ProductStock::where('product_id', $item['product_id'] ?? null)
-                ->where('warehouse_id', $data['warehouse_id'] ?? null)
-                ->first();
-
             $remaining = $soDetail ? $soDetail->remaining_qty : 0;
-            $available = $stock ? $stock->available_stock : 0;
-            $max = min($remaining, $available);
+
+            // Dropship tidak perlu stok gudang
+            if ($isDropship) {
+                $max = $remaining;
+            } else {
+                $stock = ProductStock::where('product_id', $item['product_id'] ?? null)
+                    ->where('warehouse_id', $data['warehouse_id'] ?? null)
+                    ->first();
+                $available = $stock ? $stock->available_stock : 0;
+                $max = min($remaining, $available);
+            }
 
             if ($qty > $max) {
                 $qty = $max;

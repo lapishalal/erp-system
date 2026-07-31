@@ -60,6 +60,20 @@ class SalesOrderResource extends Resource
                             ->options(Customer::pluck('name', 'id'))
                             ->searchable()
                             ->required(),
+                        Forms\Components\Toggle::make('is_dropship')
+                            ->label('Dropship (dikirim langsung supplier)')
+                            ->reactive()
+                            ->afterStateUpdated(function ($state, Forms\Set $set) {
+                                if (!$state) {
+                                    $set('dropship_supplier_id', null);
+                                }
+                            }),
+                        Forms\Components\Select::make('dropship_supplier_id')
+                            ->label('Supplier Dropship')
+                            ->options(\App\Models\Supplier::pluck('name', 'id'))
+                            ->searchable()
+                            ->required(fn (Forms\Get $get): bool => (bool) $get('is_dropship'))
+                            ->visible(fn (Forms\Get $get): bool => (bool) $get('is_dropship')),
                         Forms\Components\Select::make('status')
                             ->label('Status')
                             ->options([
@@ -223,6 +237,14 @@ class SalesOrderResource extends Resource
 					})
 					->sortable()
 					->toggleable(),
+                Tables\Columns\IconColumn::make('is_dropship')
+                    ->label('Dropship')
+                    ->boolean()
+                    ->trueIcon('heroicon-o-rocket-launch')
+                    ->falseIcon('heroicon-o-x-mark')
+                    ->trueColor('warning')
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('total_qty'),
                 Tables\Columns\TextColumn::make('total_amount')
                     ->money('IDR'),
@@ -347,6 +369,7 @@ class SalesOrderResource extends Resource
                                 'customer_id' => $record->customer_id,
                                 'warehouse_id' => $data['warehouse_id'] ?? Warehouse::first()?->id,
                                 'status'      => 'DRAFT',
+                                'is_dropship' => $record->is_dropship,
                             ]);
                             foreach ($items as $item) {
                                 $do->details()->create([
