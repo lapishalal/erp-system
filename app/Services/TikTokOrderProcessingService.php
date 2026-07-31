@@ -68,32 +68,73 @@ class TikTokOrderProcessingService
             $customer = $this->getOrCreateTikTokCustomer();
             $warehouse = $this->getFirstActiveWarehouse();
 
-            // Build mapped items from marketplace_order_items
-            $mappedItems = [];
+            // Build line items (bundle dipecah per komponen)
+            $lineItems = [];
             $totalAmount = 0;
             $totalQty = 0;
             $totalCost = 0;
 
             foreach ($items as $item) {
-                $product = $item->mappedProduct;
-                if (!$product) {
+                $components = $item->mappedComponents();
+                if ($components->isEmpty()) {
                     throw new \Exception("Item ID {$item->id} tidak memiliki mapped product");
                 }
 
-                $costPrice = $product->getHpp();
-                $subtotal = (float) ($item->subtotal_after_discount ?? ($item->unit_price * $item->quantity));
-                $unitPrice = (float) ($item->unit_price ?? ($item->quantity > 0 ? $subtotal / $item->quantity : 0));
+                $itemSubtotal = (float) ($item->subtotal_after_discount ?? ($item->unit_price * $item->quantity));
+                $setQty = max(1, (int) ($item->quantity ?? 1));
 
-                $mappedItems[] = [
-                    'product' => $product,
-                    'qty' => $item->quantity,
-                    'unit_price' => round($unitPrice, 2),
-                    'cost_price' => $costPrice,
-                    'subtotal' => round($subtotal, 2),
-                ];
-                $totalAmount += $subtotal;
-                $totalQty += $item->quantity;
-                $totalCost += $costPrice * $item->quantity;
+                if ($components->count() === 1) {
+                    // Produk single
+                    $component = $components->first();
+                    $product = $component['product'];
+                    $qty = $setQty * (int) $component['qty'];
+                    $costPrice = $product->getHpp();
+
+                    $lineItems[] = [
+                        'product' => $product,
+                        'qty' => $qty,
+                        'unit_price' => round((float) $item->unit_price, 2),
+                        'cost_price' => $costPrice,
+                        'subtotal' => round($itemSubtotal, 2),
+                    ];
+                    $totalAmount += $itemSubtotal;
+                    $totalQty += $qty;
+                    $totalCost += $costPrice * $qty;
+                } else {
+                    // Bundle: split subtotal proporsional berdasarkan bobot (default_sale_price x qty)
+                    $bobot = [];
+                    $totalBobot = 0;
+                    foreach ($components as $component) {
+                        $w = (float) ($component['product']->default_sale_price ?? 0) * max(1, (int) $component['qty']);
+                        $bobot[] = $w;
+                        $totalBobot += $w;
+                    }
+
+                    if ($totalBobot <= 0) {
+                        $totalBobot = $components->count();
+                        $bobot = array_fill(0, $components->count(), 1);
+                    }
+
+                    foreach ($components as $i => $component) {
+                        $product = $component['product'];
+                        $compQty = max(1, (int) $component['qty']);
+                        $qty = $setQty * $compQty;
+                        $share = round($itemSubtotal * ($bobot[$i] / $totalBobot), 2);
+                        $unitPrice = $qty > 0 ? round($share / $qty, 2) : 0;
+                        $costPrice = $product->getHpp();
+
+                        $lineItems[] = [
+                            'product' => $product,
+                            'qty' => $qty,
+                            'unit_price' => $unitPrice,
+                            'cost_price' => $costPrice,
+                            'subtotal' => $share,
+                        ];
+                        $totalAmount += $share;
+                        $totalQty += $qty;
+                        $totalCost += $costPrice * $qty;
+                    }
+                }
             }
 
             $orderDate = $payload['created_time'] ?? now();
@@ -117,7 +158,7 @@ class TikTokOrderProcessingService
                 'created_by' => auth()->id(),
             ]);
 
-            foreach ($mappedItems as $item) {
+            foreach ($lineItems as $item) {
                 PosTransactionDetail::create([
                     'pos_transaction_id' => $pos->id,
                     'product_id' => $item['product']->id,
@@ -144,7 +185,7 @@ class TikTokOrderProcessingService
             ]);
 
             $soDetails = [];
-            foreach ($mappedItems as $item) {
+            foreach ($lineItems as $item) {
                 $deliveredQty = in_array($erpStatus, ['COMPLETE']) ? $item['qty'] : 0;
                 $remainingQty = $item['qty'] - $deliveredQty;
 
@@ -206,7 +247,7 @@ class TikTokOrderProcessingService
                 'created_by' => auth()->id(),
             ]);
 
-            foreach ($mappedItems as $item) {
+            foreach ($lineItems as $item) {
                 SalesInvoiceDetail::create([
                     'invoice_id' => $invoice->id,
                     'product_id' => $item['product']->id,
@@ -256,6 +297,63 @@ class TikTokOrderProcessingService
             'mapped_product_id' => $productId,
             'is_mapped' => true,
         ]);
+
+        // Check if ALL items in the parent order are now mapped
+        $mkOrder = $item->marketplaceOrder;
+        $mkOrder->load('items');
+        $totalItems = $mkOrder->items->count();
+        $mappedItems = $mkOrder->items->where('is_mapped', true)->count();
+
+        if ($mappedItems === $totalItems) {
+            $mkOrder->update(['is_mapped' => true, 'error_message' => null]);
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Map a MarketplaceOrderItem to one or more Products (bundle).
+     *
+     * $components = [['product_id' => int, 'qty' => int], ...]
+     * - 1 komponen  -> simpan ke mapped_product_id (backward compatible)
+     * - >1 komponen -> simpan ke tabel marketplace_order_item_mappings
+     *
+     * Returns true if the entire order is now fully mapped.
+     */
+    public function mapItemWithComponents(MarketplaceOrderItem $item, array $components): bool
+    {
+        $components = collect($components)
+            ->filter(fn ($c) => filled($c['product_id'] ?? null))
+            ->map(fn ($c) => [
+                'product_id' => (int) $c['product_id'],
+                'qty' => max(1, (int) ($c['qty'] ?? 1)),
+            ])
+            ->values()
+            ->all();
+
+        if (empty($components)) {
+            throw new \InvalidArgumentException('Pilih minimal satu produk ERP.');
+        }
+
+        DB::transaction(function () use ($item, $components) {
+            $item->mappings()->delete();
+
+            foreach ($components as $component) {
+                Product::findOrFail($component['product_id']);
+
+                $item->mappings()->create([
+                    'tenant_id' => $item->tenant_id,
+                    'product_id' => $component['product_id'],
+                    'qty' => $component['qty'],
+                ]);
+            }
+
+            $item->update([
+                'mapped_product_id' => $components[0]['product_id'],
+                'is_mapped' => true,
+            ]);
+        });
 
         // Check if ALL items in the parent order are now mapped
         $mkOrder = $item->marketplaceOrder;

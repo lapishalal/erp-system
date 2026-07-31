@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 use App\Traits\BelongsToTenant;
 
 class MarketplaceOrderItem extends Model
@@ -41,6 +43,44 @@ class MarketplaceOrderItem extends Model
     public function mappedProduct(): BelongsTo
     {
         return $this->belongsTo(Product::class, 'mapped_product_id');
+    }
+
+    public function mappings(): HasMany
+    {
+        return $this->hasMany(MarketplaceOrderItemMapping::class, 'marketplace_order_item_id');
+    }
+
+    /**
+     * Daftar komponen produk ERP untuk item ini.
+     * - Bundle: dari tabel marketplace_order_item_mappings (produk + qty per komponen)
+     * - Single: fallback ke mapped_product_id (qty 1)
+     */
+    public function mappedComponents(): Collection
+    {
+        $this->loadMissing('mappings.product');
+
+        if ($this->mappings->isNotEmpty()) {
+            return $this->mappings->map(fn ($m) => [
+                'product' => $m->product,
+                'qty' => $m->qty,
+            ])->filter(fn ($c) => $c['product'] !== null)->values();
+        }
+
+        if ($this->mappedProduct) {
+            return collect([[
+                'product' => $this->mappedProduct,
+                'qty' => 1,
+            ]]);
+        }
+
+        return collect();
+    }
+
+    public function isBundle(): bool
+    {
+        $this->loadMissing('mappings');
+
+        return $this->mappings->count() > 1;
     }
 
     /**

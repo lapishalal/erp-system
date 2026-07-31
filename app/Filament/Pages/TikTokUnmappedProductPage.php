@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Services\TikTokOrderProcessingService;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Placeholder;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -73,10 +74,64 @@ class TikTokUnmappedProductPage extends Page implements HasTable
         $this->showAllItems = !$this->showAllItems;
     }
 
+    private static function mappingComponentsForm(): array
+    {
+        return [
+            Repeater::make('mappings')
+                ->label('Komponen Produk ERP')
+                ->schema([
+                    Select::make('product_id')
+                        ->label('Produk ERP')
+                        ->required()
+                        ->searchable()
+                        ->preload()
+                        ->options(function () {
+                            return Product::where('is_active', true)
+                                ->orderBy('name')
+                                ->get()
+                                ->mapWithKeys(fn($p) => [
+                                    $p->id => $p->name . ($p->sku ? " [SKU: {$p->sku}]" : '') . " [Kode: {$p->code}]"
+                                ]);
+                        })
+                        ->helperText('Cari berdasarkan nama produk, kode, atau SKU')
+                        ->columnSpan(2),
+                    TextInput::make('qty')
+                        ->label('Qty Komponen')
+                        ->numeric()
+                        ->default(1)
+                        ->minValue(1)
+                        ->required()
+                        ->columnSpan(1),
+                ])
+                ->columns(3)
+                ->default([['product_id' => null, 'qty' => 1]])
+                ->addActionLabel('+ Tambah Produk Komponen')
+                ->helperText('Untuk produk bundling, tambahkan beberapa produk & isi qty tiap komponen. Produk single cukup 1 baris.'),
+        ];
+    }
+
+    private static function extractComponents(array $data): array
+    {
+        $components = collect($data['mappings'] ?? [])
+            ->filter(fn($m) => filled($m['product_id'] ?? null))
+            ->map(fn($m) => [
+                'product_id' => (int) $m['product_id'],
+                'qty' => max(1, (int) ($m['qty'] ?? 1)),
+            ])
+            ->values()
+            ->all();
+
+        if (empty($components)) {
+            throw new \Exception('Pilih minimal satu produk ERP.');
+        }
+
+        return $components;
+    }
+
     public function getTableQuery(): Builder
     {
         $query = MarketplaceOrderItem::unmapped()
-            ->with(['marketplaceOrder', 'mappedProduct']);
+            ->with(['marketplaceOrder', 'mappedProduct', 'mappings.product']);
 
         \Illuminate\Support\Facades\Log::info('Unmapped query SQL: ' . $query->toSql());
         \Illuminate\Support\Facades\Log::info('Unmapped count: ' . $query->count());
@@ -125,8 +180,11 @@ class TikTokUnmappedProductPage extends Page implements HasTable
                     ->searchable()
                     ->toggleable()
                     ->placeholder('-')
-                    ->formatStateUsing(fn($record) => $record->is_mapped && $record->mappedProduct
-                        ? $record->mappedProduct->name . ' [' . $record->mappedProduct->code . ']'
+                    ->html()
+                    ->formatStateUsing(fn($record) => $record->is_mapped
+                        ? $record->mappedComponents()
+                            ->map(fn($c) => e($c['product']->name) . ' [' . e($c['product']->code) . ']' . ($c['qty'] > 1 ? ' x' . $c['qty'] : ''))
+                            ->implode('<br>')
                         : '-'),
 
                 TextColumn::make('variation')
@@ -189,7 +247,7 @@ class TikTokUnmappedProductPage extends Page implements HasTable
                     ->icon('heroicon-o-link')
                     ->color('primary')
                     ->visible(fn(MarketplaceOrderItem $record) => !$record->is_mapped)
-                    ->form([
+                    ->form(array_merge([
                         Placeholder::make('product_info')
                             ->label('Produk TikTok')
                             ->content(fn($record) => new HtmlString(
@@ -198,26 +256,13 @@ class TikTokUnmappedProductPage extends Page implements HasTable
                                 '<br>SKU: ' . e($record->seller_sku ?? '-') .
                                 '<br>Harga: Rp ' . number_format($record->unit_price, 0, ',', '.')
                             )),
-
-                        Select::make('mapped_product_id')
-                            ->label('Pilih Produk ERP')
-                            ->required()
-                            ->searchable()
-                            ->preload()
-                            ->options(function () {
-                                return Product::where('is_active', true)
-                                    ->orderBy('name')
-                                    ->get()
-                                    ->mapWithKeys(fn($p) => [
-                                        $p->id => $p->name . ($p->sku ? " [SKU: {$p->sku}]" : '') . " [Kode: {$p->code}]"
-                                    ]);
-                            })
-                            ->helperText('Cari berdasarkan nama produk, kode, atau SKU'),
-                    ])
+                    ], self::mappingComponentsForm()))
                     ->action(function (array $data, MarketplaceOrderItem $record): void {
                         try {
+                            $components = self::extractComponents($data);
+
                             $processingService = new TikTokOrderProcessingService();
-                            $isFullyMapped = $processingService->mapItem($record, (int) $data['mapped_product_id']);
+                            $isFullyMapped = $processingService->mapItemWithComponents($record, $components);
 
                             if ($isFullyMapped) {
                                 Notification::make()
@@ -236,6 +281,45 @@ class TikTokUnmappedProductPage extends Page implements HasTable
                         } catch (\Throwable $e) {
                             Notification::make()
                                 ->title('Gagal map produk')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->persistent()
+                                ->send();
+                        }
+                    }),
+
+                // Ubah mapping untuk item yang sudah ter-map (termasuk fix bundle yang salah map)
+                Action::make('remapProduct')
+                    ->label('Ubah Mapping')
+                    ->icon('heroicon-o-pencil-square')
+                    ->color('info')
+                    ->visible(fn(MarketplaceOrderItem $record) => $record->is_mapped)
+                    ->form(self::mappingComponentsForm())
+                    ->fillForm(function (MarketplaceOrderItem $record): array {
+                        $components = $record->mappedComponents()
+                            ->map(fn($c) => [
+                                'product_id' => $c['product']->id,
+                                'qty' => $c['qty'],
+                            ])
+                            ->all();
+
+                        return ['mappings' => $components ?: [['product_id' => null, 'qty' => 1]]];
+                    })
+                    ->action(function (array $data, MarketplaceOrderItem $record): void {
+                        try {
+                            $components = self::extractComponents($data);
+
+                            $processingService = new TikTokOrderProcessingService();
+                            $processingService->mapItemWithComponents($record, $components);
+
+                            Notification::make()
+                                ->title('Mapping berhasil diperbarui')
+                                ->body('Item ' . $record->display_name . ' sudah diubah mapping-nya.')
+                                ->success()
+                                ->send();
+                        } catch (\Throwable $e) {
+                            Notification::make()
+                                ->title('Gagal ubah mapping')
                                 ->body($e->getMessage())
                                 ->danger()
                                 ->persistent()
