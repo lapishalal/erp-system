@@ -1,0 +1,639 @@
+<x-filament-panels::page>
+    <div class="space-y-6">
+        {{-- Header with Quick Actions --}}
+        <div class="flex justify-between items-center">
+            <div>
+                <h2 class="text-xl font-bold text-gray-800">Overview Bisnis</h2>
+                <p class="text-sm text-gray-500">Update: {{ now()->format('d M Y H:i') }}</p>
+            </div>
+            <div class="flex gap-2">
+                <a href="{{ route('filament.admin.resources.sales-invoices.create') }}"
+                   class="px-4 py-2 bg-success-500 text-white rounded-lg hover:bg-success-600 transition text-sm font-medium">
+                    + Sales Invoice
+                </a>
+                <a href="{{ route('filament.admin.resources.purchase-orders.create') }}"
+                   class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition text-sm font-medium">
+                    + Purchase Order
+                </a>
+                <a href="{{ route('filament.admin.resources.cash-ins.create') }}"
+                   class="px-4 py-2 bg-info-500 text-white rounded-lg hover:bg-info-600 transition text-sm font-medium">
+                    + Cash In
+                </a>
+            </div>
+        </div>
+
+        {{-- FINANCIAL METRICS --}}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {{-- Cash Position --}}
+            <x-filament::card class="bg-gradient-to-br from-blue-50 to-blue-100 border-l-4 border-blue-500">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-blue-600 uppercase">Posisi Kas</p>
+                        <p class="text-2xl font-bold text-gray-800 mt-1">
+                            Rp {{ number_format($this->getStatsCards()['cash_position'] ?? 0, 0, ',', '.') }}
+                        </p>
+                        <p class="text-xs text-gray-500 mt-1">Kas & Bank</p>
+                    </div>
+                    <div class="p-3 bg-blue-500 rounded-full">
+                        <x-heroicon-o-banknotes class="w-6 h-6 text-white" />
+                    </div>
+                </div>
+            </x-filament::card>
+
+            {{-- Revenue Today --}}
+            <x-filament::card class="bg-gradient-to-br from-green-50 to-green-100 border-l-4 border-green-500">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-green-600 uppercase">Pendapatan Hari Ini</p>
+                        <p class="text-2xl font-bold text-gray-800 mt-1">
+                            Rp {{ number_format($this->getStatsCards()['revenue_today'] ?? 0, 0, ',', '.') }}
+                        </p>
+                        @php $trend = $this->getStatsCards()['revenue_trend'] ?? 0; @endphp
+                        <p class="text-xs mt-1 {{ $trend >= 0 ? 'text-success-600' : 'text-danger-600' }}">
+                            <span class="font-bold">{{ $trend >= 0 ? '↑' : '↓' }} {{ abs($trend) }}%</span> vs kemarin
+                        </p>
+                    </div>
+                    <div class="p-3 bg-green-500 rounded-full">
+                        <x-heroicon-o-currency-dollar class="w-6 h-6 text-white" />
+                    </div>
+                </div>
+            </x-filament::card>
+
+            {{-- Revenue MTD --}}
+            <x-filament::card class="bg-gradient-to-br from-purple-50 to-purple-100 border-l-4 border-purple-500">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-purple-600 uppercase">Pendapatan Bulan Ini</p>
+                        <p class="text-2xl font-bold text-gray-800 mt-1">
+                            Rp {{ number_format($this->getStatsCards()['revenue_mtd'] ?? 0, 0, ',', '.') }}
+                        </p>
+                        @php $mtdTrend = $this->getStatsCards()['mtd_trend'] ?? 0; @endphp
+                        <p class="text-xs mt-1 {{ $mtdTrend >= 0 ? 'text-success-600' : 'text-danger-600' }}">
+                            <span class="font-bold">{{ $mtdTrend >= 0 ? '↑' : '↓' }} {{ abs($mtdTrend) }}%</span> vs bulan lalu
+                        </p>
+                    </div>
+                    <div class="p-3 bg-purple-500 rounded-full">
+                        <x-heroicon-o-calendar class="w-6 h-6 text-white" />
+                    </div>
+                </div>
+            </x-filament::card>
+
+            {{-- Accounts Receivable --}}
+            <x-filament::card class="bg-gradient-to-br from-orange-50 to-orange-100 border-l-4 border-orange-500">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-orange-600 uppercase">Piutang Usaha</p>
+                        <p class="text-2xl font-bold text-gray-800 mt-1">
+                            Rp {{ number_format($this->getStatsCards()['accounts_receivable'] ?? 0, 0, ',', '.') }}
+                        </p>
+                        <p class="text-xs text-gray-500 mt-1">Yang belum tertagih</p>
+                    </div>
+                    <div class="p-3 bg-orange-500 rounded-full">
+                        <x-heroicon-o-document-text class="w-6 h-6 text-white" />
+                    </div>
+                </div>
+            </x-filament::card>
+        </div>
+
+        {{-- SECOND ROW FINANCIAL & OPERATIONAL --}}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {{-- Accounts Payable --}}
+            <x-filament::card class="bg-gradient-to-br from-red-50 to-red-100 border-l-4 border-red-500">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-red-600 uppercase">Hutang Usaha</p>
+                        <p class="text-2xl font-bold text-gray-800 mt-1">
+                            Rp {{ number_format($this->getStatsCards()['accounts_payable'] ?? 0, 0, ',', '.') }}
+                        </p>
+                        <p class="text-xs text-gray-500 mt-1">Yang belum dibayar</p>
+                    </div>
+                    <div class="p-3 bg-red-500 rounded-full">
+                        <x-heroicon-o-credit-card class="w-6 h-6 text-white" />
+                    </div>
+                </div>
+            </x-filament::card>
+
+            {{-- Stock Value --}}
+            <x-filament::card class="bg-gradient-to-br from-indigo-50 to-indigo-100 border-l-4 border-indigo-500">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-indigo-600 uppercase">Nilai Stok</p>
+                        <p class="text-2xl font-bold text-gray-800 mt-1">
+                            Rp {{ number_format($this->getStatsCards()['stock_value'] ?? 0, 0, ',', '.') }}
+                        </p>
+                        <p class="text-xs text-gray-500 mt-1">Total inventaris</p>
+                    </div>
+                    <div class="p-3 bg-indigo-500 rounded-full">
+                        <x-heroicon-o-archive-box class="w-6 h-6 text-white" />
+                    </div>
+                </div>
+            </x-filament::card>
+
+            {{-- Critical Stock --}}
+            <x-filament::card class="bg-gradient-to-br from-yellow-50 to-yellow-100 border-l-4 border-yellow-500">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-yellow-600 uppercase">Stok Kritis</p>
+                        <p class="text-2xl font-bold text-gray-800 mt-1">
+                            {{ $this->getStatsCards()['critical_stock_items'] ?? 0 }}
+                        </p>
+                        <p class="text-xs text-gray-500 mt-1">Item < min. stok</p>
+                    </div>
+                    <div class="p-3 bg-yellow-500 rounded-full">
+                        <x-heroicon-o-exclamation-triangle class="w-6 h-6 text-white" />
+                    </div>
+                </div>
+            </x-filament::card>
+
+            {{-- Pending Orders --}}
+            <x-filament::card class="bg-gradient-to-br from-teal-50 to-teal-100 border-l-4 border-teal-500">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-teal-600 uppercase">SO Pending</p>
+                        <p class="text-2xl font-bold text-gray-800 mt-1">
+                            {{ $this->getStatsCards()['sales_orders_pending'] ?? 0 }}
+                        </p>
+                        <p class="text-xs text-gray-500 mt-1">Perlu diproses</p>
+                    </div>
+                    <div class="p-3 bg-teal-500 rounded-full">
+                        <x-heroicon-o-shopping-cart class="w-6 h-6 text-white" />
+                    </div>
+                </div>
+            </x-filament::card>
+        </div>
+
+        {{-- CHARTS SECTION --}}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {{-- Revenue Trend Chart --}}
+            <x-filament::card>
+                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    <x-heroicon-o-bolt class="w-5 h-5 text-success-500" />
+                    Tren Pendapatan (30 Hari Terakhir)
+                </h3>
+                <canvas id="revenueTrendChart" height="100"></canvas>
+            </x-filament::card>
+
+            {{-- Sales by Channel --}}
+            <x-filament::card>
+                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    <x-heroicon-o-pie-chart class="w-5 h-5 text-primary-500" />
+                    Penjualan per Channel (Bulan Ini)
+                </h3>
+                <canvas id="salesByChannelChart" height="100"></canvas>
+            </x-filament::card>
+        </div>
+
+        {{-- MORE CHARTS --}}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {{-- Top Products --}}
+            <x-filament::card>
+                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    <x-heroicon-o-trophy class="w-5 h-5 text-warning-500" />
+                    Top 10 Produk (Bulan Ini)
+                </h3>
+                <canvas id="topProductsChart" height="100"></canvas>
+            </x-filament::card>
+
+            {{-- Monthly Comparison --}}
+            <x-filament::card>
+                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    <x-heroicon-o-arrows-right-left class="w-5 h-5 text-info-500" />
+                    Perbandingan Penjualan Tahunan
+                </h3>
+                <canvas id="monthlyComparisonChart" height="100"></canvas>
+            </x-filament::card>
+        </div>
+
+        {{-- AR AGING & EXPENSE BREAKDOWN --}}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {{-- AR Aging --}}
+            <x-filament::card>
+                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    <x-heroicon-o-clock class="w-5 h-5 text-danger-500" />
+                    Aging Piutang (Aging Analysis)
+                </h3>
+                <canvas id="arAgingChart" height="100"></canvas>
+                <div class="mt-4 grid grid-cols-5 gap-2 text-center text-xs">
+                    @php $aging = $this->getArAgingData(); @endphp
+                    <div class="p-2 bg-success-50 rounded">
+                        <p class="font-bold text-success-700">Current</p>
+                        <p>Rp {{ number_format($aging['current'] ?? 0, 0, ',', '.') }}</p>
+                    </div>
+                    <div class="p-2 bg-blue-50 rounded">
+                        <p class="font-bold text-blue-700">1-30</p>
+                        <p>Rp {{ number_format($aging['1_30'] ?? 0, 0, ',', '.') }}</p>
+                    </div>
+                    <div class="p-2 bg-yellow-50 rounded">
+                        <p class="font-bold text-yellow-700">31-60</p>
+                        <p>Rp {{ number_format($aging['31_60'] ?? 0, 0, ',', '.') }}</p>
+                    </div>
+                    <div class="p-2 bg-orange-50 rounded">
+                        <p class="font-bold text-orange-700">61-90</p>
+                        <p>Rp {{ number_format($aging['61_90'] ?? 0, 0, ',', '.') }}</p>
+                    </div>
+                    <div class="p-2 bg-red-50 rounded">
+                        <p class="font-bold text-red-700">>90</p>
+                        <p>Rp {{ number_format($aging['above_90'] ?? 0, 0, ',', '.') }}</p>
+                    </div>
+                </div>
+            </x-filament::card>
+
+            {{-- Expense Breakdown --}}
+            <x-filament::card>
+                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    <x-heroicon-o-currency-dollar class="w-5 h-5 text-danger-500" />
+                    Breakdown Beban (Bulan Ini)
+                </h3>
+                <canvas id="expenseBreakdownChart" height="100"></canvas>
+            </x-filament::card>
+        </div>
+
+        {{-- TABLES SECTION --}}
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {{-- Upcoming Payments --}}
+            <x-filament::card class="lg:col-span-1">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    <x-heroicon-o-bell-alert class="w-5 h-5 text-warning-500" />
+                    Jatuh Tempo (7 Hari)
+                </h3>
+                <div class="space-y-2">
+                    @forelse($this->getUpcomingPayments() as $payment)
+                        <div class="p-3 bg-{{ $payment['days_left'] <= 3 ? 'danger' : 'warning' }}-50 rounded-lg border-l-4 border-{{ $payment['days_left'] <= 3 ? 'danger' : 'warning' }}-500">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="font-bold text-sm text-gray-800">{{ $payment['party'] }}</p>
+                                    <p class="text-xs text-gray-500">{{ $payment['number'] }}</p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="font-bold text-sm">Rp {{ number_format($payment['amount'], 0, ',', '.') }}</p>
+                                    <p class="text-xs {{ $payment['days_left'] <= 3 ? 'text-danger-600' : 'text-warning-600' }}">
+                                        {{ $payment['days_left'] }} hari lagi
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    @empty
+                        <p class="text-gray-500 text-sm text-center py-4">Tidak ada pembayaran jatuh tempo</p>
+                    @endforelse
+                </div>
+            </x-filament::card>
+
+            {{-- Low Stock Products --}}
+            <x-filament::card class="lg:col-span-1">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    <x-heroicon-o-arrow-down-tray class="w-5 h-5 text-danger-500" />
+                    Stok Menipis
+                </h3>
+                <div class="space-y-2">
+                    @forelse($this->getLowStockProducts() as $product)
+                        <div class="p-3 bg-danger-50 rounded-lg">
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <p class="font-bold text-sm text-gray-800">{{ $product['name'] }}</p>
+                                    <p class="text-xs text-gray-500">{{ $product['code'] }}</p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="font-bold text-sm text-danger-600">{{ $product['available_stock'] }} / {{ $product['min_stock'] }}</p>
+                                    <p class="text-xs text-gray-500">Kurang: {{ $product['shortage'] }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    @empty
+                        <p class="text-gray-500 text-sm text-center py-4">Semua stok aman</p>
+                    @endforelse
+                </div>
+            </x-filament::card>
+
+            {{-- Pending POs --}}
+            <x-filament::card class="lg:col-span-1">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    <x-heroicon-o-document-check class="w-5 h-5 text-primary-500" />
+                    PO Perlu Approval
+                </h3>
+                <div class="space-y-2">
+                    @forelse($this->getPendingPOs() as $po)
+                        <div class="p-3 bg-primary-50 rounded-lg">
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <p class="font-bold text-sm text-gray-800">{{ $po['number'] }}</p>
+                                    <p class="text-xs text-gray-500">{{ $po['supplier'] }}</p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="font-bold text-sm">Rp {{ number_format($po['total'], 0, ',', '.') }}</p>
+                                    <p class="text-xs text-gray-500">{{ $po['date'] }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    @empty
+                        <p class="text-gray-500 text-sm text-center py-4">Tidak ada PO pending</p>
+                    @endforelse
+                </div>
+            </x-filament::card>
+        </div>
+
+        {{-- Recent Transactions --}}
+        <x-filament::card>
+            <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <x-heroicon-o-arrow-trending-up class="w-5 h-5 text-success-500" />
+                Transaksi Besar Terakhir (> Rp 1 Juta)
+            </h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b bg-gray-50">
+                            <th class="text-left p-3 font-semibold">Tanggal</th>
+                            <th class="text-left p-3 font-semibold">Tipe</th>
+                            <th class="text-left p-3 font-semibold">Deskripsi</th>
+                            <th class="text-right p-3 font-semibold">Jumlah</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($this->getRecentTransactions() as $transaction)
+                            <tr class="border-b hover:bg-gray-50">
+                                <td class="p-3">{{ $transaction['date'] }}</td>
+                                <td class="p-3">
+                                    <span class="px-2 py-1 rounded text-xs font-bold {{ $transaction['type'] === 'income' ? 'bg-success-100 text-success-700' : 'bg-danger-100 text-danger-700' }}">
+                                        {{ $transaction['type'] === 'income' ? 'Pemasukan' : 'Pengeluaran' }}
+                                    </span>
+                                </td>
+                                <td class="p-3">{{ $transaction['description'] }}</td>
+                                <td class="text-right p-3 font-bold {{ $transaction['type'] === 'income' ? 'text-success-600' : 'text-danger-600' }}">
+                                    {{ $transaction['type'] === 'income' ? '+' : '-' }} Rp {{ number_format($transaction['amount'], 0, ',', '.') }}
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="4" class="text-center p-4 text-gray-500">Belum ada transaksi besar</td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </x-filament::card>
+    </div>
+
+    {{-- Chart.js Scripts --}}
+    @push('scripts')
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+        // Common chart defaults
+        Chart.defaults.font.family = "'Inter', sans-serif";
+        Chart.defaults.color = '#6b7280';
+
+        // Revenue Trend Chart
+        const revenueCtx = document.getElementById('revenueTrendChart').getContext('2d');
+        new Chart(revenueCtx, {
+            type: 'line',
+            data: {
+                labels: @json($this->getRevenueTrendData()['labels']),
+                datasets: [{
+                    label: 'Pendapatan',
+                    data: @json($this->getRevenueTrendData()['data']),
+                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 3,
+                    pointHoverRadius: 5
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return 'Rp ' + context.parsed.y.toLocaleString('id-ID');
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return 'Rp ' + (value / 1000000).toFixed(1) + 'M';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Sales by Channel Chart
+        const channelCtx = document.getElementById('salesByChannelChart').getContext('2d');
+        new Chart(channelCtx, {
+            type: 'doughnut',
+            data: {
+                labels: @json($this->getSalesByChannelData()['labels']),
+                datasets: [{
+                    data: @json($this->getSalesByChannelData()['data']),
+                    backgroundColor: [
+                        '#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6'
+                    ],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.parsed;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = ((value / total) * 100).toFixed(1);
+                                return context.label + ': Rp ' + value.toLocaleString('id-ID') + ' (' + percentage + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Top Products Chart
+        const productsCtx = document.getElementById('topProductsChart').getContext('2d');
+        new Chart(productsCtx, {
+            type: 'bar',
+            data: {
+                labels: @json($this->getTopProductsData()['labels']),
+                datasets: [{
+                    label: 'Revenue',
+                    data: @json($this->getTopProductsData()['data']),
+                    backgroundColor: '#f59e0b',
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return 'Rp ' + context.parsed.x.toLocaleString('id-ID');
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            callback: function(value) {
+                                return 'Rp ' + (value / 1000000).toFixed(1) + 'M';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Monthly Comparison Chart
+        const comparisonCtx = document.getElementById('monthlyComparisonChart').getContext('2d');
+        new Chart(comparisonCtx, {
+            type: 'bar',
+            data: {
+                labels: @json($this->getMonthlyComparisonData()['labels']),
+                datasets: [
+                    {
+                        label: '{{ now()->year }}',
+                        data: @json($this->getMonthlyComparisonData()['this_year']),
+                        backgroundColor: '#3b82f6',
+                        borderRadius: 4
+                    },
+                    {
+                        label: '{{ now()->year - 1 }}',
+                        data: @json($this->getMonthlyComparisonData()['last_year']),
+                        backgroundColor: '#9ca3af',
+                        borderRadius: 4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': Rp ' + context.parsed.y.toLocaleString('id-ID');
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return 'Rp ' + (value / 1000000).toFixed(1) + 'M';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // AR Aging Chart
+        const agingCtx = document.getElementById('arAgingChart').getContext('2d');
+        const agingData = @json($this->getArAgingData());
+        new Chart(agingCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Current', '1-30', '31-60', '61-90', '>90'],
+                datasets: [{
+                    label: 'Piutang',
+                    data: [agingData.current, agingData['1_30'], agingData['31_60'], agingData['61_90'], agingData.above_90],
+                    backgroundColor: [
+                        '#10b981', '#3b82f6', '#f59e0b', '#f97316', '#ef4444'
+                    ],
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return 'Rp ' + context.parsed.y.toLocaleString('id-ID');
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return 'Rp ' + (value / 1000000).toFixed(1) + 'M';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Expense Breakdown Chart
+        const expenseCtx = document.getElementById('expenseBreakdownChart').getContext('2d');
+        new Chart(expenseCtx, {
+            type: 'pie',
+            data: {
+                labels: @json($this->getExpenseBreakdownData()['labels']),
+                datasets: [{
+                    data: @json($this->getExpenseBreakdownData()['data']),
+                    backgroundColor: [
+                        '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6'
+                    ],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'right' },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.parsed;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = ((value / total) * 100).toFixed(1);
+                                return context.label + ': Rp ' + value.toLocaleString('id-ID') + ' (' + percentage + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+    @endpush
+
+    {{-- Custom Styles --}}
+    @styles
+    <style>
+        canvas {
+            max-height: 300px;
+        }
+        .bg-info-500 {
+            background-color: #0ea5e9;
+        }
+        .bg-info-600 {
+            background-color: #0284c7;
+        }
+        .text-info-500 {
+            color: #0ea5e9;
+        }
+    </style>
+    @endstyles
+</x-filament-panels::page>

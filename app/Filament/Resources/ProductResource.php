@@ -73,13 +73,17 @@ class ProductResource extends Resource
                             ->label('Harga Jual Default')
                             ->numeric()
                             ->prefix('Rp')
-                            ->required(),
+                            ->step(0.01)
+                            ->minValue(0)
+                            ->required()
+                            ->dehydrateStateUsing(fn ($state) => $state === null || $state === '' ? 0 : (float) preg_replace('/[^0-9.-]/', '', (string) $state)),
                         Forms\Components\TextInput::make('last_buy_price')
                             ->label('Harga Beli Terakhir')
                             ->numeric()
                             ->prefix('Rp')
-                            ->disabled()
-                            ->dehydrated(false),
+                            ->step(0.01)
+                            ->minValue(0)
+                            ->dehydrateStateUsing(fn ($state) => $state === null || $state === '' ? 0 : (float) preg_replace('/[^0-9.-]/', '', (string) $state)),
                         Forms\Components\TextInput::make('min_stock')
                             ->label('Minimum Stok')
                             ->numeric()

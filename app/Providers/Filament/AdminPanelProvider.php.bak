@@ -30,7 +30,6 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Blue,
             ])
-            ->viteTheme('resources/css/app.css')
             ->resources([
                 \App\Filament\Resources\BrandResource::class,
                 \App\Filament\Resources\CategoryResource::class,
@@ -74,8 +73,8 @@ class AdminPanelProvider extends PanelProvider
 				\App\Filament\Pages\PosPage::class,
 				\App\Filament\Pages\LedgerReport::class,
 				\App\Filament\Pages\RegisterCompany::class,
-				\App\Filament\Pages\ExecutiveDashboard::class,
 				\App\Filament\Pages\EnhancedDashboard::class,
+				\App\Filament\Pages\ExecutiveDashboard::class,
 				\App\Filament\Pages\TikTokImportPage::class,
                 \App\Filament\Pages\TikTokUnmappedProductPage::class,
                 \App\Filament\Pages\CustomerReportPage::class,
