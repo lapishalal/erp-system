@@ -26,6 +26,7 @@ class MarketplaceOrder extends Model
         'mapped_items',
         'is_mapped',
         'error_message',
+        'is_hidden',
     ];
 
     protected $casts = [
@@ -35,7 +36,22 @@ class MarketplaceOrder extends Model
         'synced_at' => 'datetime',
         'processed_at' => 'datetime',
         'is_mapped' => 'boolean',
+        'is_hidden' => 'boolean',
     ];
+
+    public function getMappedItemsCountAttribute(): int
+    {
+        $this->loadMissing('items');
+
+        return $this->items->where('is_mapped', true)->count();
+    }
+
+    public function getHasUnmappedItemsAttribute(): bool
+    {
+        $this->loadMissing('items');
+
+        return $this->items->where('is_mapped', false)->isNotEmpty();
+    }
 
     public function connection(): BelongsTo
     {

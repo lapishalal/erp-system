@@ -27,7 +27,7 @@
                     <div>
                         <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Siap Diproses</p>
                         <p class="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                            {{ \App\Models\MarketplaceOrder::where('is_mapped', true)->whereNull('sales_order_id')->where('platform', 'tiktok')->count() }}
+                            {{ \App\Models\MarketplaceOrder::where('is_mapped', true)->whereNull('sales_order_id')->whereNull('processed_at')->where('status', '!=', 'CANCEL')->where('platform', 'tiktok')->count() }}
                         </p>
                     </div>
                 </div>
@@ -62,8 +62,8 @@
                     <div class="mt-1 text-sm text-amber-700 dark:text-amber-400 space-y-1">
                         <p><strong>1.</strong> Klik tombol <strong>"Map ke Produk"</strong> pada baris yang belum ter-map, lalu pilih produk dari ERP.</p>
                         <p><strong>2.</strong> Jika <strong>Seller SKU</strong> sudah diisi di TikTok dan sama dengan field SKU di data Barang ERP, klik <strong>"Auto-Match SKU"</strong>.</p>
-                        <p><strong>3.</strong> Setelah <strong>semua item</strong> sebuah order ter-map, klik tombol hijau <strong>"Proses Semua Order Siap"</strong> di atas tabel.</p>
-                        <p><strong>4.</strong> Setelah diproses, POS/SO/DO/Invoice otomatis dibuat. Lalu import file Income untuk CashIn + jurnal.</p>
+                        <p><strong>3.</strong> Setelah <strong>semua item</strong> sebuah order ter-map, buka menu <strong>"List Orderan TikTok"</strong> lalu klik <strong>"Proses"</strong> pada order tersebut.</p>
+                        <p><strong>4.</strong> Setelah diproses, POS/SO/DO/Invoice dibuat. Lalu import file Income untuk CashIn + jurnal.</p>
                     </div>
                 </div>
             </div>

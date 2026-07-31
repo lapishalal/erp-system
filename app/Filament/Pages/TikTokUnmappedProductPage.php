@@ -267,7 +267,7 @@ class TikTokUnmappedProductPage extends Page implements HasTable
                             if ($isFullyMapped) {
                                 Notification::make()
                                     ->title('Semua item order sudah di-map!')
-                                    ->body('Order ' . $record->marketplaceOrder->platform_order_id . ' siap diproses. Klik tombol "Proses Order" atau langsung import file Income.')
+                                    ->body('Order ' . $record->marketplaceOrder->platform_order_id . ' siap diproses. Buka menu "List Orderan TikTok" lalu klik Proses.')
                                     ->success()
                                     ->persistent()
                                     ->send();
@@ -394,7 +394,7 @@ class TikTokUnmappedProductPage extends Page implements HasTable
                             if ($isFullyMapped) {
                                 Notification::make()
                                     ->title('Produk baru dibuat & semua item order lengkap!')
-                                    ->body('Produk "' . $data['product_name'] . '" [' . $data['product_code'] . '] berhasil dibuat. Order ' . $record->marketplaceOrder->platform_order_id . ' siap diproses.')
+                                    ->body('Produk "' . $data['product_name'] . '" [' . $data['product_code'] . '] berhasil dibuat. Order ' . $record->marketplaceOrder->platform_order_id . ' siap diproses di menu "List Orderan TikTok".')
                                     ->success()
                                     ->persistent()
                                     ->send();
@@ -512,63 +512,12 @@ class TikTokUnmappedProductPage extends Page implements HasTable
                     ->color(fn() => $this->showAllItems ? 'gray' : 'warning')
                     ->action(fn() => $this->toggleShowAll()),
 
-                // Process all fully-mapped orders
-                Action::make('processMappedOrders')
-                    ->label('Proses Semua Order Siap')
-                    ->icon('heroicon-o-play')
+                // Buka list orderan TikTok untuk proses manual
+                Action::make('goToListOrders')
+                    ->label('Buka List Orderan TikTok')
+                    ->icon('heroicon-o-shopping-bag')
                     ->color('success')
-                    ->visible(function () {
-                        return MarketplaceOrder::query()
-                            ->where('is_mapped', true)
-                            ->whereNull('sales_order_id')
-                            ->where('platform', 'tiktok')
-                            ->exists();
-                    })
-                    ->action(function (): void {
-                        $orders = MarketplaceOrder::query()
-                            ->where('is_mapped', true)
-                            ->whereNull('sales_order_id')
-                            ->where('platform', 'tiktok')
-                            ->get();
-
-                        $success = 0;
-                        $errors = 0;
-
-                        foreach ($orders as $mkOrder) {
-                            try {
-                                $processingService = new TikTokOrderProcessingService();
-                                $result = $processingService->createOrderChain($mkOrder);
-
-                                if (($result['action'] ?? '') === 'created') {
-                                    $success++;
-                                }
-                            } catch (\Throwable $e) {
-                                $errors++;
-                                \Illuminate\Support\Facades\Log::error('Process mapped order failed', [
-                                    'order_id' => $mkOrder->platform_order_id,
-                                    'error' => $e->getMessage(),
-                                ]);
-                            }
-                        }
-
-                        if ($success > 0) {
-                            Notification::make()
-                                ->title("{$success} order berhasil diproses!")
-                                ->body('POS, SO, DO, dan Invoice telah dibuat. Stok otomatis berkurang untuk status Dikirim/Selesai.')
-                                ->success()
-                                ->persistent()
-                                ->send();
-                        }
-
-                        if ($errors > 0) {
-                            Notification::make()
-                                ->title("{$errors} order gagal diproses")
-                                ->body('Cek log untuk detail error.')
-                                ->danger()
-                                ->persistent()
-                                ->send();
-                        }
-                    }),
+                    ->url(TikTokOrdersPage::getUrl()),
             ])
             ->emptyStateHeading('Tidak ada produk yang belum di-map')
             ->emptyStateDescription('Semua produk dari import TikTok sudah ter-map dengan produk di ERP.')

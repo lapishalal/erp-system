@@ -59,6 +59,11 @@ class TikTokOrderProcessingService
             ];
         }
 
+        // Validate: order dibatalkan tidak boleh diproses
+        if (($mkOrder->status ?? 'OPEN') === 'CANCEL') {
+            throw new \Exception('Order berstatus dibatalkan (CANCEL), tidak dapat diproses.');
+        }
+
         return DB::transaction(function () use ($mkOrder, $forceDoStatus) {
             $items = $mkOrder->items;
             $payload = $mkOrder->raw_payload;
@@ -257,7 +262,19 @@ class TikTokOrderProcessingService
                 ]);
             }
 
-            // 6. Update marketplace_order: link SO and mark as processed
+            // 6. Perbaiki delivered_qty/remaining_qty pada SO details.
+            //    Event DeliveryOrderDetail::created menandai semua qty sebagai delivered,
+            //    sehingga perlu di-reset sesuai status aktual order.
+            $isDelivered = $erpStatus === 'COMPLETE';
+            foreach ($so->details()->get() as $detail) {
+                $detail->delivered_qty = $isDelivered ? $detail->qty : 0;
+                $detail->remaining_qty = $detail->qty - $detail->delivered_qty;
+                $detail->saveQuietly();
+            }
+            $so->refresh();
+            $so->updateQuietly(['status' => $erpStatus]);
+
+            // 7. Update marketplace_order: link SO and mark as processed
             $mkOrder->update([
                 'sales_order_id' => $so->id,
                 'status' => $erpStatus,
@@ -281,6 +298,65 @@ class TikTokOrderProcessingService
                 'do_status' => $doStatus,
                 'invoice_id' => $invoice->id,
                 'so_id' => $so->id,
+            ];
+        });
+    }
+
+    /**
+     * Batalkan seluruh chain order (dipakai untuk retur / re-import status CANCEL).
+     *
+     * Urutan penting:
+     * 1. Invoice -> CANCEL (catat bila sudah PAID untuk peringatan refund)
+     * 2. DO -> CANCEL (stok fisik dikembalikan, jurnal DO dihapus via observer)
+     * 3. SO -> CANCEL terakhir (mengembalikan outstanding via model event,
+     *    dan tidak akan tertimpa oleh observer updateSalesOrderStatus)
+     *
+     * @return array Result with keys: action, message, was_paid
+     */
+    public function cancelOrderChain(MarketplaceOrder $mkOrder, bool $isReturn = false): array
+    {
+        return DB::transaction(function () use ($mkOrder, $isReturn) {
+            $so = $mkOrder->salesOrder;
+
+            if (!$so) {
+                $mkOrder->update(['status' => 'CANCEL', 'processed_at' => now()]);
+
+                return [
+                    'action' => 'cancelled',
+                    'message' => 'Order belum diproses, ditandai dibatalkan',
+                    'was_paid' => false,
+                ];
+            }
+
+            $wasPaid = false;
+
+            foreach ($so->salesInvoices as $invoice) {
+                if (in_array($invoice->status, ['PAID', 'POSTED'])) {
+                    $wasPaid = true;
+                }
+                if ($invoice->status !== 'CANCEL') {
+                    $invoice->update(['status' => 'CANCEL']);
+                }
+            }
+
+            foreach ($so->deliveryOrders as $do) {
+                if ($do->status !== 'CANCEL') {
+                    $do->update(['status' => 'CANCEL']);
+                }
+            }
+
+            if ($so->status !== 'CANCEL') {
+                $so->update(['status' => 'CANCEL']);
+            }
+
+            $mkOrder->update(['status' => 'CANCEL', 'processed_at' => now()]);
+
+            return [
+                'action' => 'cancelled',
+                'message' => $wasPaid && $isReturn
+                    ? 'Order dibatalkan. PERINGATAN: invoice sudah PAID (settlement sudah masuk). Refund akan terpotong di income berikutnya — harap dicek manual.'
+                    : 'Order dibatalkan (stok dikembalikan)',
+                'was_paid' => $wasPaid,
             ];
         });
     }

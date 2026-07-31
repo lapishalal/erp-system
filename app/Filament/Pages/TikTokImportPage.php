@@ -61,7 +61,8 @@ class TikTokImportPage extends Page implements HasForms
                                 <div class="space-y-1 text-sm text-gray-500">
                                     <p><strong>Apa yang dilakukan:</strong></p>
                                     <ul class="list-disc list-inside space-y-0.5 ml-2">
-                                        <li>Membuat POS Transaction, Sales Order, Delivery Order, Sales Invoice</li>
+                                        <li>Semua order disimpan ke <strong>"List Orderan TikTok"</strong> (tidak otomatis diproses)</li>
+                                        <li>Setiap order diproses manual dengan tombol <strong>Proses</strong> sesuai statusnya</li>
                                         <li>Stok otomatis berkurang untuk status "Dikirim" / "Selesai"</li>
                                         <li>Mapping produk menggunakan field <strong>SKU</strong> di data Barang</li>
                                         <li>Order duplikat otomatis di-skip, status berubah otomatis diupdate</li>
@@ -69,9 +70,9 @@ class TikTokImportPage extends Page implements HasForms
                                     </ul>
                                     <p class="mt-2"><strong>Mapping Status:</strong></p>
                                     <ul class="list-disc list-inside space-y-0.5 ml-2">
-                                        <li>Perlu dikirim / Belum dibayar → SO(OPEN) + DO(DRAFT)</li>
-                                        <li>Dikirim / Selesai → SO(COMPLETE) + DO(DELIVERED) + Stok berkurang</li>
-                                        <li>Dibatalkan → Skip (tidak diproses)</li>
+                                        <li>Perlu dikirim / Belum dibayar → Proses = SO(OPEN) + DO(DRAFT)</li>
+                                        <li>Dikirim / Selesai → Proses = SO(COMPLETE) + DO(DELIVERED) + Stok berkurang</li>
+                                        <li>Dibatalkan → Skipped otomatis (disimpan sebagai riwayat)</li>
                                     </ul>
                                 </div>
                             '),)

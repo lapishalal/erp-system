@@ -221,6 +221,15 @@ class TikTokIncomeImportService
     ): array {
         $mkOrder->load('items');
 
+        // Order dibatalkan → tidak ada settlement yang harus diproses
+        if ($mkOrder->status === 'CANCEL') {
+            return [
+                'order_id' => $orderId,
+                'action'   => 'skipped',
+                'message'  => 'Order dibatalkan, tidak diproses',
+            ];
+        }
+
         $totalItems  = $mkOrder->items->count();
         $mappedItems = $mkOrder->items->where('is_mapped', true)->count();
 
@@ -500,6 +509,16 @@ class TikTokIncomeImportService
     ): array {
         return DB::transaction(function () use ($so, $mkOrder, $orderId, $settlementAmount, $revenueGross, $paymentDate) {
             $orderDate = $paymentDate ?? now();
+
+            // Order sudah dibatalkan/diretur → jangan proses pembayaran
+            if ($mkOrder->status === 'CANCEL') {
+                return [
+                    'order_id'  => $orderId,
+                    'action'    => 'skipped',
+                    'message'   => 'Order dibatalkan, settlement tidak diproses',
+                    'so_number' => $so->so_number,
+                ];
+            }
 
             // 1. Pastikan status SO dan DO sudah COMPLETE/DELIVERED
             if ($so->status !== 'COMPLETE') {

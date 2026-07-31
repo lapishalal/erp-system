@@ -230,15 +230,6 @@ class TikTokCsvImportService
             return $this->processExistingOrder($mkOrder, $orderData, $erpStatus);
         }
 
-        // Skip cancelled orders entirely
-        if ($erpStatus === 'CANCEL') {
-            return [
-                'order_id' => $orderId,
-                'action' => 'skipped',
-                'message' => 'Order dibatalkan, tidak diproses',
-            ];
-        }
-
         return $this->createNewOrder($orderId, $orderData, $erpStatus, $customer, $warehouse);
     }
 
@@ -248,19 +239,21 @@ class TikTokCsvImportService
     private function processExistingOrder(MarketplaceOrder $mkOrder, array $orderData, string $erpStatus): array
     {
         $so = $mkOrder->salesOrder;
-        if (!$so) {
-            // SO was deleted somehow, recreate
-            $mkOrder->delete();
-            return $this->createNewOrder(
-                $orderData['order_id'],
-                $orderData,
-                $erpStatus,
-                $this->getOrCreateTikTokCustomer(),
-                $this->getFirstActiveWarehouse()
-            );
-        }
-
         $previousStatus = $mkOrder->status;
+
+        // Belum diproses (SO belum dibuat) → cukup perbarui status marketplace order
+        if (!$so) {
+            $mkOrder->update([
+                'status' => $erpStatus,
+                'processed_at' => $erpStatus === 'CANCEL' ? now() : $mkOrder->processed_at,
+            ]);
+
+            return [
+                'order_id' => $orderData['order_id'],
+                'action' => 'updated',
+                'message' => "Status diupdate: {$previousStatus} → {$erpStatus}",
+            ];
+        }
 
         // No change
         if ($previousStatus === $erpStatus) {
@@ -271,20 +264,16 @@ class TikTokCsvImportService
             ];
         }
 
-        // Order was cancelled
+        // Order was cancelled after being processed → batalkan chain (stok kembali, invoice CANCEL)
         if ($erpStatus === 'CANCEL') {
-            $so->update(['status' => 'CANCEL']);
-            foreach ($so->deliveryOrders as $do) {
-                if ($do->status !== 'CANCEL') {
-                    $do->update(['status' => 'CANCEL']);
-                }
-            }
-            $mkOrder->update(['status' => 'CANCEL', 'processed_at' => now()]);
+            $processingService = new TikTokOrderProcessingService();
+            $processingService->cancelOrderChain($mkOrder);
 
             return [
                 'order_id' => $orderData['order_id'],
                 'action' => 'updated',
-                'message' => 'Order dibatalkan',
+                'message' => 'Order dibatalkan (chain dibatalkan, stok dikembalikan)',
+                'so_number' => $so->so_number,
             ];
         }
 
@@ -367,36 +356,43 @@ class TikTokCsvImportService
                 }
             }
 
-            // 3. If ALL items are mapped → create full chain immediately via TikTokOrderProcessingService
-            if ($unmappedCount === 0 && $mappedCount > 0) {
-                $processingService = new TikTokOrderProcessingService();
-                $chainResult = $processingService->createOrderChain($mkOrder);
+            // 3. Semua order disimpan dulu; pemrosesan (POS/SO/DO/Invoice) dilakukan
+            //    manual dari menu "List Orderan TikTok" sesuai status masing-masing.
+            $isCancelled = $erpStatus === 'CANCEL';
 
+            $mkOrder->update([
+                'is_mapped' => $mappedCount > 0 && $unmappedCount === 0,
+                'processed_at' => $isCancelled ? now() : null,
+                'error_message' => $unmappedCount > 0
+                    ? $unmappedCount . ' item belum ter-map: ' . collect($orderData['items'])
+                        ->filter(fn($i) => !$this->findProduct($i))
+                        ->map(fn($i) => ($i['product_name'] ?? 'unknown') . ($i['variation'] ? ' (' . $i['variation'] . ')' : ''))
+                        ->join(', ')
+                    : null,
+            ]);
+
+            if ($isCancelled) {
                 return [
                     'order_id' => $orderId,
-                    'action' => $chainResult['action'],
-                    'message' => 'Berhasil: ' . $chainResult['message'],
-                    'so_number' => $chainResult['so_number'] ?? null,
-                    'do_status' => $chainResult['do_status'] ?? null,
+                    'action' => 'skipped',
+                    'message' => 'Order dibatalkan, disimpan sebagai riwayat (tidak diproses)',
                 ];
             }
 
-            // 4. Has unmapped items → save as pending, user needs to map manually
-            $unmappedNames = collect($orderData['items'])
-                ->filter(fn($i) => !$this->findProduct($i))
-                ->map(fn($i) => ($i['product_name'] ?? 'unknown') . ($i['variation'] ? ' (' . $i['variation'] . ')' : ''))
-                ->join(', ');
-
-            $mkOrder->update([
-                'is_mapped' => false,
-                'error_message' => $unmappedCount . ' item belum ter-map: ' . $unmappedNames,
-            ]);
+            if ($unmappedCount > 0) {
+                return [
+                    'order_id' => $orderId,
+                    'action' => 'unmapped',
+                    'message' => "{$unmappedCount} dari " . ($mappedCount + $unmappedCount) . " item belum ter-map. Silakan map di halaman 'Produk Belum Ter-map TikTok', lalu proses di 'List Orderan TikTok'.",
+                    'unmapped_count' => $unmappedCount,
+                    'mapped_count' => $mappedCount,
+                ];
+            }
 
             return [
                 'order_id' => $orderId,
-                'action' => 'unmapped',
-                'message' => "{$unmappedCount} dari " . ($mappedCount + $unmappedCount) . " item belum ter-map. Silakan map di halaman 'Produk Belum Ter-map TikTok'.",
-                'unmapped_count' => $unmappedCount,
+                'action' => 'created',
+                'message' => 'Order disimpan dan siap diproses di menu "List Orderan TikTok"',
                 'mapped_count' => $mappedCount,
             ];
         });

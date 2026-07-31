@@ -220,6 +220,8 @@ class TikTokImportController extends Controller
             $orders = MarketplaceOrder::query()
                 ->where('is_mapped', true)
                 ->whereNull('sales_order_id')
+                ->whereNull('processed_at')
+                ->where('status', '!=', 'CANCEL')
                 ->where('platform', 'tiktok')
                 ->get();
 

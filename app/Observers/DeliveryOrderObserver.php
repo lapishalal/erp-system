@@ -199,6 +199,9 @@ class DeliveryOrderObserver
         $so = SalesOrder::with('details')->find($soId);
         if (!$so) return;
 
+        // Jangan menimpa SO yang sengaja dibatalkan
+        if ($so->status === 'CANCEL') return;
+
         $totalQty = $so->details->sum('qty');
         $totalDelivered = $so->details->sum('delivered_qty');
 
