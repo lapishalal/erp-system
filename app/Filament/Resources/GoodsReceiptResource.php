@@ -244,6 +244,7 @@ class GoodsReceiptResource extends Resource
                     ->preload()
                     ->placeholder('Semua (termasuk tanpa PO)'),
             ])
+            ->defaultSort('created_at', 'desc')
             ->actions([
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('printPdf')

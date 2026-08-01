@@ -5,6 +5,22 @@
         <x-filament::button type="submit" wire:loading.attr="disabled">
             Tampilkan
         </x-filament::button>
+
+        @if(($this->data['account_id'] ?? null) && ($this->data['from_date'] ?? null) && ($this->data['to_date'] ?? null))
+            <x-filament::button
+                tag="a"
+                href="{{ route('ledger-report.export', [
+                    'account_id' => $this->data['account_id'],
+                    'from_date' => $this->data['from_date'],
+                    'to_date' => $this->data['to_date'],
+                ]) }}"
+                target="_blank"
+                color="success"
+                icon="heroicon-o-arrow-down-tray"
+            >
+                Export Excel
+            </x-filament::button>
+        @endif
     </x-filament-panels::form>
 
     @php

@@ -256,6 +256,7 @@ class SalesInvoiceResource extends Resource
                     ->searchable()
                     ->preload(),
             ])
+            ->defaultSort('created_at', 'desc')
             ->actions([
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('printPdf')

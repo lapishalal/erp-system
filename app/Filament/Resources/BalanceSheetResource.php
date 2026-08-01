@@ -155,11 +155,11 @@ class BalanceSheetResource extends Resource
             ->filters([
                 Tables\Filters\Filter::make('periode')
                     ->form([
-                        Forms\Components::Select::make('year')
+                        Forms\Components\Select::make('year')
                             ->label('Tahun')
                             ->options(array_combine(range(2024, 2030), range(2024, 2030)))
                             ->default(now()->year),
-                        Forms\Components::Select::make('month')
+                        Forms\Components\Select::make('month')
                             ->label('Bulan')
                             ->options([
                                 1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 4 => 'April',

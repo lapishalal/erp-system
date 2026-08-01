@@ -85,6 +85,7 @@ class CustomerResource extends Resource
             ->filters([
                 Tables\Filters\TernaryFilter::make('is_active'),
             ])
+            ->defaultSort('created_at', 'desc')
             ->headerActions([
                 Tables\Actions\Action::make('import')
                     ->label('Import Excel')

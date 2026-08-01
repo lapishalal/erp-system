@@ -79,6 +79,15 @@ class AdminPanelProvider extends PanelProvider
                 \App\Filament\Pages\TikTokUnmappedProductPage::class,
                 \App\Filament\Pages\TikTokOrdersPage::class,
                 \App\Filament\Pages\CustomerReportPage::class,
+                \App\Filament\Pages\TrialBalanceReportPage::class,
+                \App\Filament\Pages\ReceivableReportPage::class,
+                \App\Filament\Pages\PayableReportPage::class,
+                \App\Filament\Pages\PurchaseReportPage::class,
+                \App\Filament\Pages\ReturnReportPage::class,
+                \App\Filament\Pages\PayrollReportPage::class,
+                \App\Filament\Pages\StockValuationReportPage::class,
+                \App\Filament\Pages\ProductProfitReportPage::class,
+                \App\Filament\Pages\TaxReportPage::class,
             ])
             ->widgets([
                 \App\Filament\Widgets\DashboardStats::class,

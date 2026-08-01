@@ -205,7 +205,8 @@ class SalesOrderResource extends Resource
                 Tables\Columns\TextColumn::make('date')
                     ->date('d M Y')
                     ->sortable(),
-                Tables\Columns\TextColumn::make('customer.name'),
+                Tables\Columns\TextColumn::make('customer.name')
+                    ->searchable(),
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
@@ -274,6 +275,7 @@ class SalesOrderResource extends Resource
                     ->searchable()
                     ->preload(),
             ])
+            ->defaultSort('created_at', 'desc')
             ->actions([
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('createDO')

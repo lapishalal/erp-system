@@ -312,6 +312,7 @@ class DeliveryOrderResource extends Resource
                 Tables\Columns\TextColumn::make('date')
                     ->date('d M Y'),
                 Tables\Columns\TextColumn::make('customer.name')
+                    ->searchable()
                     ->label('Customer'),
                 Tables\Columns\IconColumn::make('is_dropship')
                     ->label('Dropship')
@@ -352,6 +353,7 @@ class DeliveryOrderResource extends Resource
                     ->searchable()
                     ->preload(),
             ])
+            ->defaultSort('created_at', 'desc')
             ->actions([
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('printPdf')

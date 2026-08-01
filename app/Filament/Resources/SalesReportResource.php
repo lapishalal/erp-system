@@ -130,7 +130,7 @@ class SalesReportResource extends Resource
                         Forms\Components\DatePicker::make('dari')
                             ->label('Dari Tanggal')
                             ->default(now()->startOfMonth()),
-                        Forms\Components::DatePicker::make('sampai')
+                        Forms\Components\DatePicker::make('sampai')
                             ->label('Sampai Tanggal')
                             ->default(now()->endOfMonth()),
                     ])
@@ -157,7 +157,7 @@ class SalesReportResource extends Resource
 
                 Tables\Filters\Filter::make('brand')
                     ->form([
-                        Forms\Components::Select::make('brand_id')
+                        Forms\Components\Select::make('brand_id')
                             ->label('Brand')
                             ->options(\App\Models\Brand::pluck('name', 'id'))
                             ->searchable()
@@ -173,7 +173,7 @@ class SalesReportResource extends Resource
 
                 Tables\Filters\Filter::make('product')
                     ->form([
-                        Forms\Components::Select::make('product_id')
+                        Forms\Components\Select::make('product_id')
                             ->label('Produk')
                             ->options(\App\Models\Product::pluck('name', 'id'))
                             ->searchable()

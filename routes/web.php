@@ -76,6 +76,13 @@ Route::middleware(['auth'])->group(function () {
         return Excel::download(new CashFlowExport((int)$year, (int)$month), 'cash-flow-' . $year . '-' . $month . '.xlsx');
     })->name('cash-flow.export');
 
+    Route::get('/ledger-report/export', function () {
+        $accountId = (int) request('account_id', 0);
+        $from = request('from_date', now()->startOfMonth()->toDateString());
+        $to = request('to_date', now()->endOfMonth()->toDateString());
+        return Excel::download(new \App\Exports\LedgerReportExport($accountId, $from, $to), 'buku-besar-' . $from . '-' . $to . '.xlsx');
+    })->name('ledger-report.export');
+
     // POS Routes
     Route::get('/pos/api/products', [PosController::class, 'getProducts']);
     Route::post('/pos/api/checkout', [PosController::class, 'checkout']);

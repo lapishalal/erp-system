@@ -160,6 +160,7 @@ class PurchaseOrderResource extends Resource
                         'CANCEL' => 'Cancel',
                     ]),
             ])
+            ->defaultSort('created_at', 'desc')
             ->actions([
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('receiveAll')
