@@ -334,35 +334,8 @@ class TikTokIncomeImportService
             }
 
             $orderDate     = $paymentDate ?? now();
-            $paymentMethod = 'TRANSFER';
 
-            // 1. Create POS Transaction
-            $posNumber = $this->generateNumber('POS-TTK');
-            $pos = PosTransaction::create([
-                'transaction_number' => $posNumber,
-                'date'               => $orderDate,
-                'customer_id'        => $customer->id,
-                'subtotal'           => $totalAmount,
-                'discount'           => 0,
-                'tax'                => 0,
-                'total'              => $totalAmount,
-                'paid_amount'        => $settlementAmount,
-                'change_amount'      => 0,
-                'payment_method'     => $paymentMethod,
-                'created_by'         => auth()->id(),
-            ]);
-
-            foreach ($mappedItems as $item) {
-                PosTransactionDetail::create([
-                    'pos_transaction_id' => $pos->id,
-                    'product_id'         => $item['product']->id,
-                    'qty'                => $item['qty'],
-                    'price'              => $item['unit_price'],
-                    'subtotal'           => $item['subtotal'],
-                ]);
-            }
-
-            // 2. Create Sales Order (COMPLETE)
+            // 1. Create Sales Order (COMPLETE)
             $soNumber = $this->generateNumber('SO-TTK');
             $so = SalesOrder::create([
                 'so_number'    => $soNumber,
@@ -394,7 +367,7 @@ class TikTokIncomeImportService
                 $soDetails[] = $detail;
             }
 
-            // 3. Create DO (DRAFT → DELIVERED untuk trigger stock deduction)
+            // 2. Create DO (DRAFT → DELIVERED untuk trigger stock deduction)
             $doNumber = $this->generateNumber('DO-TTK');
             $do = DeliveryOrder::create([
                 'do_number'    => $doNumber,
@@ -419,7 +392,7 @@ class TikTokIncomeImportService
 
             $do->update(['status' => 'DELIVERED']);
 
-            // 4. Create Invoice (nilai = totalAmount = harga jual kotor, BUKAN settlement)
+            // 3. Create Invoice (nilai = totalAmount = harga jual kotor, BUKAN settlement)
             $invoiceNumber = $this->generateNumber('INV-TTK');
             $invoice = SalesInvoice::create([
                 'invoice_number' => $invoiceNumber,
@@ -444,13 +417,13 @@ class TikTokIncomeImportService
                 ]);
             }
 
-            // 5. Proses pembayaran dengan rekonsiliasi admin fee
+            // 4. Proses pembayaran dengan rekonsiliasi admin fee
             $this->applySettlementWithAdminFee($invoice, $settlementAmount, $orderId, $orderDate, $customer->id);
 
-            // 6. Create HPP Journal
+            // 5. Create HPP Journal
             $this->createHppJournal($so, $orderId);
 
-            // 7. Save ke marketplace_orders
+            // 6. Save ke marketplace_orders
             $tenantId = auth()->user()->tenant_id ?? null;
             MarketplaceOrder::create([
                 'tenant_id'         => $tenantId,

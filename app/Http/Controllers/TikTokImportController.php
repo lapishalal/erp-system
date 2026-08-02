@@ -212,7 +212,7 @@ class TikTokImportController extends Controller
 
     /**
      * Process all fully-mapped orders that don't have a chain yet.
-     * Creates POS/SO/DO/Invoice for each.
+     * Creates SO/DO/Invoice for each.
      */
     public function processMappedOrders(Request $request): JsonResponse
     {

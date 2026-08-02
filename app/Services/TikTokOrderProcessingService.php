@@ -68,7 +68,7 @@ class TikTokOrderProcessingService
             $items = $mkOrder->items;
             $payload = $mkOrder->raw_payload;
             $orderId = $mkOrder->platform_order_id;
-            $erpStatus = $forceDoStatus === 'DELIVERED' ? 'COMPLETE' : ($mkOrder->status ?? 'OPEN');
+            $erpStatus = 'COMPLETE';
 
             $customer = $this->getOrCreateTikTokCustomer();
             $warehouse = $this->getFirstActiveWarehouse();
@@ -144,36 +144,9 @@ class TikTokOrderProcessingService
 
             $orderDate = $payload['created_time'] ?? now();
             $orderDate = ($orderDate instanceof Carbon) ? $orderDate : Carbon::parse($orderDate);
-            $paymentMethod = $this->mapPaymentMethod($payload['payment_method'] ?? '');
             $doStatus = $forceDoStatus ?? $this->getDoStatus($erpStatus);
 
-            // 1. Create POS Transaction
-            $posNumber = $this->generateNumber('POS-TTK');
-            $pos = PosTransaction::create([
-                'transaction_number' => $posNumber,
-                'date' => $orderDate,
-                'customer_id' => $customer->id,
-                'subtotal' => $totalAmount,
-                'discount' => 0,
-                'tax' => 0,
-                'total' => $payload['order_amount'] ?? $totalAmount,
-                'paid_amount' => in_array($erpStatus, ['COMPLETE']) ? ($payload['order_amount'] ?? $totalAmount) : 0,
-                'change_amount' => 0,
-                'payment_method' => $paymentMethod,
-                'created_by' => auth()->id(),
-            ]);
-
-            foreach ($lineItems as $item) {
-                PosTransactionDetail::create([
-                    'pos_transaction_id' => $pos->id,
-                    'product_id' => $item['product']->id,
-                    'qty' => $item['qty'],
-                    'price' => $item['unit_price'],
-                    'subtotal' => $item['subtotal'],
-                ]);
-            }
-
-            // 2. Create Sales Order
+            // 1. Create Sales Order
             $soNumber = $this->generateNumber('SO-TTK');
             $so = SalesOrder::create([
                 'so_number' => $soNumber,
@@ -208,7 +181,7 @@ class TikTokOrderProcessingService
                 $soDetails[] = $detail;
             }
 
-            // 3. Create Delivery Order (DRAFT first)
+            // 2. Create Delivery Order (DRAFT first)
             $doNumber = $this->generateNumber('DO-TTK');
             $do = DeliveryOrder::create([
                 'do_number' => $doNumber,
@@ -232,12 +205,12 @@ class TikTokOrderProcessingService
                 ]);
             }
 
-            // 4. Update DO status if shipped/delivered (triggers stock deduction via model event)
+            // 3. Update DO status if shipped/delivered (triggers stock deduction via model event)
             if (in_array($doStatus, ['SHIPPED', 'DELIVERED'])) {
                 $do->update(['status' => $doStatus]);
             }
 
-            // 5. Create Sales Invoice
+            // 4. Create Sales Invoice
             $invoiceNumber = $this->generateNumber('INV-TTK');
             $invoice = SalesInvoice::create([
                 'invoice_number' => $invoiceNumber,
@@ -262,7 +235,7 @@ class TikTokOrderProcessingService
                 ]);
             }
 
-            // 6. Perbaiki delivered_qty/remaining_qty pada SO details.
+            // 5. Perbaiki delivered_qty/remaining_qty pada SO details.
             //    Event DeliveryOrderDetail::created menandai semua qty sebagai delivered,
             //    sehingga perlu di-reset sesuai status aktual order.
             $isDelivered = $erpStatus === 'COMPLETE';
@@ -274,7 +247,7 @@ class TikTokOrderProcessingService
             $so->refresh();
             $so->updateQuietly(['status' => $erpStatus]);
 
-            // 7. Update marketplace_order: link SO and mark as processed
+            // 6. Update marketplace_order: link SO and mark as processed
             $mkOrder->update([
                 'sales_order_id' => $so->id,
                 'status' => $erpStatus,
@@ -284,7 +257,6 @@ class TikTokOrderProcessingService
 
             Log::info('TikTokOrderProcessing: Chain created', [
                 'order_id' => $orderId,
-                'pos' => $posNumber,
                 'so' => $soNumber,
                 'do' => $doNumber,
                 'inv' => $invoiceNumber,
@@ -293,7 +265,7 @@ class TikTokOrderProcessingService
 
             return [
                 'action' => 'created',
-                'message' => "POS={$posNumber}, SO={$soNumber}, DO={$doNumber}, INV={$invoiceNumber}",
+                'message' => "SO={$soNumber}, DO={$doNumber}, INV={$invoiceNumber}",
                 'so_number' => $soNumber,
                 'do_status' => $doStatus,
                 'invoice_id' => $invoice->id,
@@ -519,27 +491,9 @@ class TikTokOrderProcessingService
     private function getDoStatus(string $erpStatus): string
     {
         return match ($erpStatus) {
-            'COMPLETE' => 'DELIVERED',
+            'COMPLETE' => 'SHIPPED',
             'CANCEL' => 'CANCEL',
-            default => 'DRAFT',
-        };
-    }
-
-    /**
-     * Map TikTok payment method to ERP payment method
-     */
-    private function mapPaymentMethod(string $tiktokMethod): string
-    {
-        $method = trim(strtolower($tiktokMethod));
-
-        return match (true) {
-            str_contains($method, 'bayar di tempat'), str_contains($method, 'cod') => 'CASH',
-            str_contains($method, 'qris') => 'QRIS',
-            str_contains($method, 'debit'), str_contains($method, 'paylater') => 'DEBIT',
-            str_contains($method, 'dana'), str_contains($method, 'ovo'),
-            str_contains($method, 'shopeepay'), str_contains($method, 'gopay'),
-            str_contains($method, 'transfer') => 'TRANSFER',
-            default => 'TRANSFER',
+            default => 'SHIPPED',
         };
     }
 
