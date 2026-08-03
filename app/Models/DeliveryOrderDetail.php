@@ -38,18 +38,8 @@ class DeliveryOrderDetail extends Model
             self::updateSalesOrderDetail($detail, $detail->qty);
 
             $do = $detail->deliveryOrder;
-            if ($do) {
-                // =========================================================
-                // Reserve outstanding saat DRAFT (sebelum barang terkirim)
-                // =========================================================
-                if ($do->status === 'DRAFT') {
-                    self::updateOutstandingStock($detail, $detail->qty);
-                }
-                
-                if (in_array($do->status, ['SHIPPED', 'DELIVERED'])) {
-                    self::updateStock($detail, $detail->qty);
-                    self::updateOutstandingStock($detail, -$detail->qty);
-                }
+            if ($do && in_array($do->status, ['SHIPPED', 'DELIVERED'])) {
+                self::updateStock($detail, $detail->qty);
             }
         });
 
@@ -63,7 +53,6 @@ class DeliveryOrderDetail extends Model
             $do = $detail->deliveryOrder;
             if ($do && in_array($do->status, ['SHIPPED', 'DELIVERED'])) {
                 self::updateStock($detail, $delta);
-                self::updateOutstandingStock($detail, -$delta);
             }
         });
 
@@ -71,7 +60,6 @@ class DeliveryOrderDetail extends Model
             self::updateParentTotal($detail->do_id);
             self::updateSalesOrderDetail($detail, -$detail->qty);
             self::updateStock($detail, -$detail->qty);
-            self::updateOutstandingStock($detail, $detail->qty);
         });
     }
 
@@ -146,28 +134,6 @@ class DeliveryOrderDetail extends Model
         }
     }
 
-    protected static function updateOutstandingStock(self $detail, int $delta): void
-    {
-        $do = $detail->deliveryOrder;
-        if ($do && $do->is_dropship) {
-            return;
-        }
-
-        $warehouseId = $do?->warehouse_id ?? 1;
-
-        $stock = \App\Models\ProductStock::where('product_id', $detail->product_id)
-            ->where('warehouse_id', $warehouseId)
-            ->first();
-
-        if (!$stock) {
-            return;
-        }
-
-        $stock->outstanding_stock = max(0, $stock->outstanding_stock + $delta);
-        $stock->available_stock = $stock->physical_stock - $stock->outstanding_stock;
-        $stock->save();
-    }
-
     public static function updateStock(self $detail, int $delta): void
     {
         $do = $detail->deliveryOrder;
@@ -189,7 +155,7 @@ class DeliveryOrderDetail extends Model
 
         $qtyBefore = $stock->physical_stock;
         $stock->physical_stock = max(0, $stock->physical_stock - $delta);
-        $stock->available_stock = $stock->physical_stock - $stock->outstanding_stock;
+        $stock->available_stock = $stock->physical_stock;
         $stock->save();
 
         \App\Models\StockMovement::create([

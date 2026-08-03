@@ -140,11 +140,13 @@ class ProductResource extends Resource
                 Tables\Columns\TextColumn::make('stock.outstanding_stock')
                     ->label('Outstanding')
                     ->numeric()
-                    ->default(0),
+                    ->default(0)
+                    ->hidden(),
                 Tables\Columns\TextColumn::make('stock.available_stock')
                     ->label('Available')
                     ->numeric()
-                    ->default(0),
+                    ->default(0)
+                    ->hidden(),
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Aktif')
                     ->boolean(),

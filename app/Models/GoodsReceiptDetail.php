@@ -173,7 +173,7 @@ class GoodsReceiptDetail extends Model
 
         $qtyBefore = $stock->physical_stock;
         $stock->physical_stock = max(0, $stock->physical_stock + $delta);
-        $stock->available_stock = max(0, $stock->physical_stock - $stock->outstanding_stock);
+        $stock->available_stock = $stock->physical_stock;
         $stock->save();
 
         \App\Models\StockMovement::create([

@@ -41,20 +41,9 @@ class SalesOrder extends Model
     ];
 
     // =========================================================
-    // FIX: Hanya handle CANCEL — outstanding dihandle oleh SalesOrderDetail::created
+    // Outstanding stok dihapus: SO tidak lagi berhubungan dengan stok.
+    // Stok keluar hanya saat DO dikirim.
     // =========================================================
-    protected static function booted(): void
-    {
-        static::updated(function (self $so) {
-            if ($so->isDirty('status') && $so->status === 'CANCEL') {
-                $so->load('details');
-                foreach ($so->details as $detail) {
-                    SalesOrderDetail::updateOutstandingStock($detail, -$detail->qty);
-                }
-            }
-        });
-    }
-
     public function salesInvoices(): HasMany
     {
         return $this->hasMany(SalesInvoice::class, 'so_id');

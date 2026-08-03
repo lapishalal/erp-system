@@ -8,7 +8,6 @@ use App\Models\DeliveryOrder;
 use App\Models\Product;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderDetail;
-use App\Services\StockService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -98,9 +97,6 @@ class SalesController extends Controller
                 $totalQty += $item['qty'];
                 $totalAmount += $subtotal;
                 $totalCost += $costTotal;
-
-                // Add outstanding
-                StockService::addOutstanding($item['product_id'], 1, $item['qty']);
             }
 
             $so->update([

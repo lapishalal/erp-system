@@ -9,7 +9,6 @@ use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderDetail;
 use App\Models\SalesInvoice;
 use App\Models\SalesOrderDetail;
-use App\Services\StockService;
 use Filament\Resources\Pages\CreateRecord;
 
 class CreateSalesOrder extends CreateRecord
@@ -34,15 +33,6 @@ class CreateSalesOrder extends CreateRecord
             $this->autoCreatePurchaseOrder($so);
             $this->autoCreateDeliveryOrder($so);
             $this->autoCreateInvoice($so);
-        } else {
-            foreach ($so->details as $detail) {
-                StockService::addOutstanding($detail->product_id, 1, $detail->qty);
-            }
-
-            if ($so->status === 'OPEN') {
-                $so->status = 'OPEN';
-                $so->save();
-            }
         }
     }
 

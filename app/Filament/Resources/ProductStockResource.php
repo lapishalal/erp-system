@@ -50,10 +50,12 @@ class ProductStockResource extends Resource
                     ->disabled(),
                 Forms\Components\TextInput::make('outstanding_stock')
                     ->numeric()
-                    ->disabled(),
+                    ->disabled()
+                    ->hidden(),
                 Forms\Components\TextInput::make('available_stock')
                     ->numeric()
-                    ->disabled(),
+                    ->disabled()
+                    ->hidden(),
             ]);
     }
 
@@ -77,10 +79,12 @@ class ProductStockResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('outstanding_stock')
                     ->label('Outstanding')
-                    ->numeric(),
+                    ->numeric()
+                    ->hidden(),
                 Tables\Columns\TextColumn::make('available_stock')
                     ->label('Available')
                     ->numeric()
+                    ->hidden()
                     ->color(fn (int $state): string => $state <= 0 ? 'danger' : 'success'),
                 Tables\Columns\TextColumn::make('product.min_stock')
                     ->label('Min Stok')

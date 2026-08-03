@@ -115,7 +115,7 @@ class PurchaseReturn extends Model
                 if ($stock) {
                     $qtyBefore = $stock->physical_stock;
                     $stock->physical_stock = max(0, $stock->physical_stock - $detail->qty);
-                    $stock->available_stock = max(0, $stock->physical_stock - $stock->outstanding_stock);
+                    $stock->available_stock = $stock->physical_stock;
                     $stock->save();
 
                     StockMovement::create([
@@ -216,7 +216,7 @@ class PurchaseReturn extends Model
                 if ($stock) {
                     $qtyBefore = $stock->physical_stock;
                     $stock->physical_stock += $detail->qty;
-                    $stock->available_stock = max(0, $stock->physical_stock - $stock->outstanding_stock);
+                    $stock->available_stock = $stock->physical_stock;
                     $stock->save();
 
                     StockMovement::create([

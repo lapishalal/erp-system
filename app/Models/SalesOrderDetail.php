@@ -50,61 +50,12 @@ class SalesOrderDetail extends Model
             $detail->remaining_qty = $detail->qty;
         });
 
-        // =========================================================
-        // FIX: Gunakan Laravel app() container — persist 1 request
-        // Tidak bisa di-reset oleh Filament
-        // =========================================================
-        static::created(function (self $detail) {
-            $key = 'sod_outstanding_processed_' . $detail->id;
-
-            if (app()->bound($key)) {
-                return;
-            }
-
-            app()->instance($key, true);
-            self::updateOutstandingStock($detail, $detail->qty);
-        });
-
         static::updated(function (self $detail) {
             if ($detail->isDirty('qty')) {
-                $originalQty = $detail->getOriginal('qty') ?? 0;
-                $delta = $detail->qty - $originalQty;
-                self::updateOutstandingStock($detail, $delta);
-
                 $detail->remaining_qty = max(0, $detail->qty - ($detail->delivered_qty ?? 0));
                 $detail->saveQuietly();
             }
         });
-
-        static::deleted(function (self $detail) {
-            self::updateOutstandingStock($detail, -$detail->qty);
-        });
-    }
-
-    public static function updateOutstandingStock(self $detail, int $delta): void
-    {
-        $so = $detail->salesOrder;
-        if (!$so || $so->is_dropship) {
-            return;
-        }
-
-        $warehouseId = 1;
-
-        $stock = \App\Models\ProductStock::firstOrCreate(
-            [
-                'product_id' => $detail->product_id,
-                'warehouse_id' => $warehouseId,
-            ],
-            [
-                'physical_stock' => 0,
-                'outstanding_stock' => 0,
-                'available_stock' => 0,
-            ]
-        );
-
-        $stock->outstanding_stock = max(0, $stock->outstanding_stock + $delta);
-        $stock->available_stock = $stock->physical_stock - $stock->outstanding_stock;
-        $stock->save();
     }
 
     public function salesOrder(): BelongsTo

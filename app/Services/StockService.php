@@ -17,7 +17,7 @@ class StockService
             ]);
 
             $stock->physical_stock = ($stock->physical_stock ?? 0) + $qty;
-            $stock->available_stock = $stock->physical_stock - ($stock->outstanding_stock ?? 0);
+            $stock->available_stock = $stock->physical_stock;
             $stock->save();
 
             StockTransaction::create([
@@ -51,7 +51,7 @@ class StockService
             }
 
             $stock->physical_stock -= $qty;
-            $stock->available_stock = $stock->physical_stock - $stock->outstanding_stock;
+            $stock->available_stock = $stock->physical_stock;
             $stock->save();
 
             StockTransaction::create([
@@ -69,31 +69,6 @@ class StockService
         });
     }
 
-    public static function addOutstanding(int $productId, int $warehouseId, int $qty): void
-    {
-        $stock = ProductStock::firstOrNew([
-            'product_id' => $productId,
-            'warehouse_id' => $warehouseId,
-        ]);
-
-        $stock->outstanding_stock = ($stock->outstanding_stock ?? 0) + $qty;
-        $stock->available_stock = ($stock->physical_stock ?? 0) - $stock->outstanding_stock;
-        $stock->save();
-    }
-
-    public static function deductOutstanding(int $productId, int $warehouseId, int $qty): void
-    {
-        $stock = ProductStock::where('product_id', $productId)
-            ->where('warehouse_id', $warehouseId)
-            ->first();
-
-        if ($stock) {
-            $stock->outstanding_stock = max(0, $stock->outstanding_stock - $qty);
-            $stock->available_stock = $stock->physical_stock - $stock->outstanding_stock;
-            $stock->save();
-        }
-    }
-
     public static function adjustStock(int $productId, int $warehouseId, int $newQty, ?string $notes = null, ?int $userId = null): void
     {
         DB::transaction(function () use ($productId, $warehouseId, $newQty, $notes, $userId) {
@@ -105,7 +80,7 @@ class StockService
             $difference = $newQty - ($stock->physical_stock ?? 0);
 
             $stock->physical_stock = $newQty;
-            $stock->available_stock = $newQty - ($stock->outstanding_stock ?? 0);
+            $stock->available_stock = $newQty;
             $stock->save();
 
             if ($difference !== 0) {
