@@ -59,7 +59,9 @@ class GoodsReceipt extends Model
         });
 
         // ============================================
-        // Hapus jurnal + restore PO detail saat GR dihapus
+        // Hapus jurnal + restore stok & PO saat GR dihapus.
+        // Detail dihapus via Eloquent agar event deleted-nya
+        // mem-balik stok (updateStock -qty) & restore PO.
         // ============================================
         static::deleting(function (self $gr) {
             // Hapus jurnal terkait jika status RECEIVED
@@ -69,12 +71,9 @@ class GoodsReceipt extends Model
                     ->delete();
             }
 
-            // Restore PO detail qty
-            if ($gr->po_id) {
-                $gr->load('details');
-                foreach ($gr->details as $detail) {
-                    self::restorePurchaseOrderDetail($detail, $gr->po_id);
-                }
+            $gr->load('details');
+            foreach ($gr->details as $detail) {
+                $detail->delete();
             }
         });
     }
@@ -156,35 +155,6 @@ class GoodsReceipt extends Model
             'credit' => $totalAmount,
             'description' => 'Hutang supplier dari GR ' . $gr->gr_number,
         ]);
-    }
-
-    protected static function restorePurchaseOrderDetail(GoodsReceiptDetail $detail, int $poId): void
-    {
-        $poDetail = \App\Models\PurchaseOrderDetail::where('po_id', $poId)
-            ->where('product_id', $detail->product_id)
-            ->first();
-
-        if (!$poDetail) return;
-
-        $poDetail->received_qty = max(0, ($poDetail->received_qty ?? 0) - $detail->qty);
-        $poDetail->remaining_qty = max(0, $poDetail->qty - $poDetail->received_qty);
-        $poDetail->save();
-
-        $po = \App\Models\PurchaseOrder::with('details')->find($poId);
-        if ($po) {
-            $totalRemaining = $po->details->sum('remaining_qty');
-            $totalQty = $po->details->sum('qty');
-            $totalReceived = $po->details->sum('received_qty');
-
-            if ($totalReceived == 0) {
-                $po->status = 'DRAFT';
-            } elseif ($totalRemaining > 0) {
-                $po->status = 'PARTIAL';
-            } else {
-                $po->status = 'COMPLETE';
-            }
-            $po->save();
-        }
     }
 
     protected static function getAccountIdByCode(string $code): ?int

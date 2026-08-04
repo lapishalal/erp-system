@@ -133,8 +133,11 @@ class GoodsReceiptDetail extends Model
         if ($po) {
             $totalRemaining = $po->details->sum('remaining_qty');
             $totalQty = $po->details->sum('qty');
+            $totalReceived = $po->details->sum('received_qty');
 
-            if ($totalRemaining == 0 && $totalQty > 0) {
+            if ($totalReceived == 0) {
+                $po->status = 'DRAFT';
+            } elseif ($totalRemaining == 0 && $totalQty > 0) {
                 $po->status = 'COMPLETE';
             } elseif ($totalRemaining < $totalQty) {
                 $po->status = 'PARTIAL';
