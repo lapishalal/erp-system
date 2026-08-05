@@ -14,6 +14,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 
 class TikTokOrdersPage extends Page implements HasTable
 {
@@ -81,7 +82,10 @@ class TikTokOrdersPage extends Page implements HasTable
             ->defaultSort('created_at', 'desc')
             ->columns([
                 TextColumn::make('created_at')
-                    ->label('Tanggal Import')
+                    ->label('Tanggal Order')
+                    ->state(fn (MarketplaceOrder $record): ?Carbon => ($record->raw_payload['created_time'] ?? null)
+                        ? Carbon::parse($record->raw_payload['created_time'])
+                        : $record->created_at)
                     ->dateTime('d M Y H:i')
                     ->sortable(),
 
