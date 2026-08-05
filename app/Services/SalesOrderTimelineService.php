@@ -3,6 +3,13 @@
 
 namespace App\Services;
 
+use App\Filament\Resources\CashInResource;
+use App\Filament\Resources\DeliveryOrderResource;
+use App\Filament\Resources\SalesInvoiceResource;
+use App\Filament\Resources\SalesOrderResource;
+use App\Models\CashIn;
+use App\Models\DeliveryOrder;
+use App\Models\SalesInvoice;
 use App\Models\SalesOrder;
 use Carbon\Carbon;
 
@@ -50,7 +57,13 @@ class SalesOrderTimelineService
             'meta' => [
                 'customer' => $so->customer->name ?? '-',
                 'total' => 'Rp ' . number_format($so->total_amount ?? 0),
-            ]
+            ],
+            'links' => [
+                [
+                    'label' => 'Lihat SO ' . $so->so_number,
+                    'url'   => SalesOrderResource::getUrl('view', ['record' => $so]),
+                ],
+            ],
         ];
     }
 
@@ -68,6 +81,7 @@ class SalesOrderTimelineService
                 'badge' => 'Pending',
                 'icon' => 'heroicon-o-truck',
                 'meta' => ['completed' => 0, 'total' => 0],
+                'links' => [],
             ];
         }
 
@@ -90,7 +104,11 @@ class SalesOrderTimelineService
                 'completed' => $delivered,
                 'total' => $total,
                 'do_numbers' => $dos->pluck('do_number')->implode(', '),
-            ]
+            ],
+            'links' => $dos->map(fn (DeliveryOrder $do) => [
+                'label' => $do->do_number . ' · ' . $do->status,
+                'url'   => DeliveryOrderResource::getUrl('edit', ['record' => $do]),
+            ])->values()->all(),
         ];
     }
 
@@ -108,6 +126,7 @@ class SalesOrderTimelineService
                 'badge' => 'Pending',
                 'icon' => 'heroicon-o-document-text',
                 'meta' => ['completed' => 0, 'total' => 0],
+                'links' => [],
             ];
         }
 
@@ -131,7 +150,11 @@ class SalesOrderTimelineService
                 'total' => $total,
                 'amount' => 'Rp ' . number_format($lastInvoice?->total ?? 0),
                 'due_date' => $lastInvoice?->due_date?->format('d M Y'),
-            ]
+            ],
+            'links' => $invoices->map(fn (SalesInvoice $inv) => [
+                'label' => $inv->invoice_number . ' · ' . $inv->status,
+                'url'   => SalesInvoiceResource::getUrl('view', ['record' => $inv]),
+            ])->values()->all(),
         ];
     }
 
@@ -149,6 +172,7 @@ class SalesOrderTimelineService
                 'badge' => 'Pending',
                 'icon' => 'heroicon-o-banknotes',
                 'meta' => ['paid' => 0, 'total' => 0, 'percent' => 0],
+                'links' => [],
             ];
         }
 
@@ -168,7 +192,8 @@ class SalesOrderTimelineService
                     'total' => $totalAmount,
                     'percent' => 100,
                     'remaining' => 0,
-                ]
+                ],
+                'links' => $this->paymentLinks($invoice),
             ];
         }
 
@@ -200,8 +225,26 @@ class SalesOrderTimelineService
                 'total' => $totalAmount,
                 'percent' => $percent,
                 'remaining' => $totalAmount - $totalPaid,
-            ]
+            ],
+            'links' => $this->paymentLinks($invoice),
         ];
+    }
+
+    private function paymentLinks(SalesInvoice $invoice): array
+    {
+        $links = $invoice->cashIns->map(fn (CashIn $cashIn) => [
+            'label' => 'CashIn #' . $cashIn->id
+                . ' · Rp ' . number_format($cashIn->amount, 0, ',', '.')
+                . ($cashIn->date ? ' · ' . $cashIn->date->format('d M Y') : ''),
+            'url'   => CashInResource::getUrl('edit', ['record' => $cashIn]),
+        ])->values()->all();
+
+        $links[] = [
+            'label' => 'Lihat Invoice ' . $invoice->invoice_number,
+            'url'   => SalesInvoiceResource::getUrl('view', ['record' => $invoice]),
+        ];
+
+        return $links;
     }
 
     private function calculateProgress(array $stages): float

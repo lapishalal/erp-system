@@ -6,9 +6,29 @@
     $progress = $data['progress_percent'];
     $isOverdue = $data['is_overdue'];
     $quickActions = $data['quick_actions'];
+
+    $modalLinks = [];
+    $modalLabels = [];
+    foreach ($stages as $stage) {
+        $modalLinks[$stage['key']] = $stage['links'] ?? [];
+        $modalLabels[$stage['key']] = $stage['label'];
+    }
 @endphp
 
-<div class="w-full space-y-6">
+<div
+    class="w-full space-y-6"
+    x-data="{
+        links: {{ \Illuminate\Support\Js::from($modalLinks) }},
+        labels: {{ \Illuminate\Support\Js::from($modalLabels) }},
+        modalLinks: [],
+        modalTitle: '',
+        openModal(key) {
+            this.modalLinks = this.links[key] ?? []
+            this.modalTitle = this.labels[key] ?? ''
+            $dispatch('open-modal', { id: 'timeline-modal' })
+        },
+    }"
+>
     
     {{-- Overdue Alert --}}
     @if($isOverdue)
@@ -54,10 +74,14 @@
                     };
                 @endphp
 
-                <div class="flex flex-col items-center w-1/4 relative group">
+                <button
+                    type="button"
+                    @click="openModal('{{ $stage['key'] }}')"
+                    class="flex flex-col items-center w-1/4 relative group text-center p-0 cursor-pointer transition focus:outline-none"
+                >
                     
                     {{-- Icon Circle --}}
-                    <div class="w-11 h-11 rounded-full flex items-center justify-center border-2 z-10 transition-all duration-300 {{ $statusClass }}">
+                    <div class="w-11 h-11 rounded-full flex items-center justify-center border-2 z-10 transition-all duration-300 {{ $statusClass }} group-hover:ring-4 group-hover:ring-gray-200">
                         <x-dynamic-component :component="$stage['icon']" class="w-5 h-5" />
                     </div>
 
@@ -111,7 +135,7 @@
                             </div>
                         @endif
                     </div>
-                </div>
+                </button>
             @endforeach
         </div>
     </div>
@@ -139,4 +163,32 @@
         <span>Stage saat ini: <strong class="text-gray-700">{{ $data['current_stage'] }}</strong></span>
         <span>Progress: <strong class="text-gray-700">{{ round($progress) }}%</strong></span>
     </div>
+
+    {{-- Modal Detail Stage --}}
+    <x-filament::modal id="timeline-modal" width="md">
+        <x-slot name="heading">
+            <span x-text="modalTitle"></span>
+        </x-slot>
+
+        <x-slot name="description">
+            <span x-text="'Klik untuk melihat detail terkait ' + modalTitle.toLowerCase()"></span>
+        </x-slot>
+
+        <div class="space-y-2">
+            <template x-for="link in modalLinks" :key="link.url">
+                <a
+                    :href="link.url"
+                    target="_blank"
+                    class="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition hover:border-primary-300 hover:bg-primary-50"
+                >
+                    <span x-text="link.label"></span>
+                    <x-heroicon-m-arrow-top-right-on-square class="h-4 w-4 text-gray-400" />
+                </a>
+            </template>
+
+            <p x-show="modalLinks.length === 0" class="py-4 text-center text-sm text-gray-500">
+                Belum ada data terkait.
+            </p>
+        </div>
+    </x-filament::modal>
 </div>
