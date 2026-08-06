@@ -50,12 +50,43 @@ class SalesOrderDetail extends Model
             $detail->remaining_qty = $detail->qty;
         });
 
+        static::saving(function (self $detail) {
+            $detail->fillCostFromProduct();
+        });
+
+        static::created(function (self $detail) {
+            $detail->salesOrder?->recalculateTotals();
+        });
+
         static::updated(function (self $detail) {
             if ($detail->isDirty('qty')) {
                 $detail->remaining_qty = max(0, $detail->qty - ($detail->delivered_qty ?? 0));
                 $detail->saveQuietly();
             }
         });
+    }
+
+    /**
+     * Jika HPP (cost_price) belum terisi, ambil dari HPP produk saat ini.
+     * Ini menjamin SO yang dibuat lewat form manual tetap punya HPP
+     * walau harga beli produk diisi belakangan.
+     */
+    public function fillCostFromProduct(): void
+    {
+        if ((float) $this->cost_price > 0) {
+            return;
+        }
+
+        $product = $this->product;
+        if (! $product) {
+            return;
+        }
+
+        $hpp = $product->getHpp();
+        if ($hpp > 0) {
+            $this->cost_price = $hpp;
+            $this->profit = (float) $this->subtotal - ($hpp * (int) $this->qty);
+        }
     }
 
     public function salesOrder(): BelongsTo

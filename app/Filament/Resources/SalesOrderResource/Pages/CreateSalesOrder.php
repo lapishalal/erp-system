@@ -25,6 +25,8 @@ class CreateSalesOrder extends CreateRecord
             $detail->save();
         }
 
+        $so->recalculateTotals();
+
         if ($so->is_dropship) {
             // Dropship: paksa status OPEN, lalu buat PO + DO + Invoice otomatis
             $so->status = 'OPEN';

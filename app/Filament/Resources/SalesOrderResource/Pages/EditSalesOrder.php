@@ -21,6 +21,7 @@ class EditSalesOrder extends EditRecord
 
     protected function afterSave(): void
     {
+        $this->record->recalculateTotals();
         $this->syncAutoInvoices();
     }
 

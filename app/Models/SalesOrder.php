@@ -84,6 +84,22 @@ class SalesOrder extends Model
         return $this->belongsTo(Supplier::class, 'dropship_supplier_id');
     }
 
+    /**
+     * Hitung ulang total_cost & profit dari detail terkini.
+     * Dipanggil otomatis saat detail dibuat/diubah.
+     */
+    public function recalculateTotals(): void
+    {
+        $totalCost = $this->details()->get()->sum(fn ($d) => (float) $d->cost_price * (int) $d->qty);
+        $profit = (float) $this->total_amount - $totalCost;
+
+        if ((float) $this->total_cost !== $totalCost || (float) $this->profit !== $profit) {
+            $this->total_cost = $totalCost;
+            $this->profit = $profit;
+            $this->saveQuietly();
+        }
+    }
+
     protected static function booted(): void
     {
         // Hapus invoice terkait (beserta detail & cash-in) saat SO dihapus,
