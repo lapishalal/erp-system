@@ -83,4 +83,17 @@ class SalesOrder extends Model
     {
         return $this->belongsTo(Supplier::class, 'dropship_supplier_id');
     }
+
+    protected static function booted(): void
+    {
+        // Hapus invoice terkait (beserta detail & cash-in) saat SO dihapus,
+        // agar tidak ada invoice yatim yang menggantung tanpa SO.
+        static::deleting(function (self $so) {
+            foreach ($so->salesInvoices as $invoice) {
+                $invoice->details()->delete();
+                $invoice->cashIns()->delete();
+                $invoice->delete();
+            }
+        });
+    }
 }

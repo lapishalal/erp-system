@@ -19,6 +19,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Database\Eloquent\Builder;
 
 class SalesOrderResource extends Resource
 {
@@ -274,6 +275,24 @@ class SalesOrderResource extends Resource
                     ->relationship('customer', 'name')
                     ->searchable()
                     ->preload(),
+                Tables\Filters\SelectFilter::make('customer_type')
+                    ->label('Tipe Customer')
+                    ->options([
+                        'marketplace' => 'Marketplace (TikTok)',
+                        'non_marketplace' => 'Non Marketplace',
+                    ])
+                    ->query(function (Builder $query, array $data): void {
+                        $value = $data['value'] ?? null;
+                        if (filled($value)) {
+                            $query->whereHas('customer', function ($q) use ($value): void {
+                                if ($value === 'marketplace') {
+                                    $q->where('code', 'MKT-TIKTOK');
+                                } else {
+                                    $q->where(fn ($sub) => $sub->where('code', '!=', 'MKT-TIKTOK')->orWhereNull('code'));
+                                }
+                            });
+                        }
+                    }),
             ])
             ->defaultSort('created_at', 'desc')
             ->actions([

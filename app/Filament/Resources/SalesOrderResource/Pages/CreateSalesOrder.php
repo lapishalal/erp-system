@@ -33,6 +33,9 @@ class CreateSalesOrder extends CreateRecord
             $this->autoCreatePurchaseOrder($so);
             $this->autoCreateDeliveryOrder($so);
             $this->autoCreateInvoice($so);
+        } else {
+            // SO biasa: langsung buat invoice (tagihan), staff tinggal isi pembayarannya
+            $this->autoCreateInvoice($so);
         }
     }
 
@@ -106,7 +109,7 @@ class CreateSalesOrder extends CreateRecord
             'total' => $so->total_amount,
             'paid_amount' => 0,
             'status' => 'UNPAID',
-            'notes' => 'Auto-generated dropship invoice untuk SO: ' . $so->so_number,
+            'notes' => 'Auto-generated invoice untuk SO: ' . $so->so_number,
         ]);
 
         foreach ($so->details as $d) {

@@ -14,6 +14,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Database\Eloquent\Builder;
 
 class SalesInvoiceResource extends Resource
 {
@@ -87,7 +88,6 @@ class SalesInvoiceResource extends Resource
                                 $set('customer_id', $so->customer_id);
 
                                 $details = [];
-                                $total = 0;
                                 foreach ($so->details as $d) {
                                     $qty = $d->qty ?? 0;
                                     $price = $d->unit_price ?? 0;
@@ -98,15 +98,13 @@ class SalesInvoiceResource extends Resource
                                         'price'      => $price,
                                         'subtotal'   => $subtotal,
                                     ];
-                                    $total += $subtotal;
                                 }
 
                                 // =========================================================
-                                // FIX #2: Set detail + total langsung
+                                // FIX #2: Set detail + total langsung (total = nilai SO)
                                 // =========================================================
                                 $set('details', $details);
-                                $set('total', $total);
-                                $set('paid_amount', 0);
+                                $set('total', (float) $so->total_amount);
                                 $set('status', 'UNPAID');
                             })
                             ->placeholder('Kosongkan jika faktur tidak dari SO'),
@@ -170,13 +168,22 @@ class SalesInvoiceResource extends Resource
                             ->columns(4)
                             ->addActionLabel('Tambah Barang')
                             ->live()
-                            ->afterStateUpdated(function ($state, Forms\Set $set) {
+                            ->afterStateUpdated(function ($state, Forms\Get $get, Forms\Set $set) {
+                                // Total Faktur mengacu pada nilai SO bila terhubung SO
+                                $soId = $get('so_id');
+                                if ($soId) {
+                                    $so = SalesOrder::find($soId);
+                                    if ($so) {
+                                        $set('total', (float) $so->total_amount);
+                                        return;
+                                    }
+                                }
+
                                 $total = 0;
                                 foreach ($state ?? [] as $item) {
                                     $total += ($item['qty'] ?? 0) * ($item['price'] ?? 0);
                                 }
                                 $set('total', $total);
-                                $set('paid_amount', 0);
                             }),
                     ]),
 
@@ -189,24 +196,6 @@ class SalesInvoiceResource extends Resource
                             ->default(0)
                             ->disabled()
                             ->dehydrated(true),
-
-                        Forms\Components\TextInput::make('paid_amount')
-                            ->label('Sudah Dibayar')
-                            ->numeric()
-                            ->prefix('Rp')
-                            ->default(0)
-                            ->live(onBlur: true)
-                            ->afterStateUpdated(function ($state, Forms\Get $get, Forms\Set $set) {
-                                $total = $get('total') ?? 0;
-                                $paid = $state ?? 0;
-                                if ($paid >= $total && $total > 0) {
-                                    $set('status', 'PAID');
-                                } elseif ($paid > 0 && $paid < $total) {
-                                    $set('status', 'PARTIAL');
-                                } else {
-                                    $set('status', 'UNPAID');
-                                }
-                            }),
                     ])->columns(2),
             ]);
     }
@@ -255,6 +244,24 @@ class SalesInvoiceResource extends Resource
                     ->relationship('customer', 'name')
                     ->searchable()
                     ->preload(),
+                Tables\Filters\SelectFilter::make('customer_type')
+                    ->label('Tipe Customer')
+                    ->options([
+                        'marketplace' => 'Marketplace (TikTok)',
+                        'non_marketplace' => 'Non Marketplace',
+                    ])
+                    ->query(function (Builder $query, array $data): void {
+                        $value = $data['value'] ?? null;
+                        if (filled($value)) {
+                            $query->whereHas('customer', function ($q) use ($value): void {
+                                if ($value === 'marketplace') {
+                                    $q->where('code', 'MKT-TIKTOK');
+                                } else {
+                                    $q->where(fn ($sub) => $sub->where('code', '!=', 'MKT-TIKTOK')->orWhereNull('code'));
+                                }
+                            });
+                        }
+                    }),
             ])
             ->defaultSort('created_at', 'desc')
             ->actions([
