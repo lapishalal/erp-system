@@ -69,7 +69,7 @@ class TikTokOrdersPage extends Page implements HasTable
     {
         return MarketplaceOrder::query()
             ->withCount('items')
-            ->with(['salesOrder', 'items'])
+            ->with(['salesOrder.salesInvoices', 'items'])
             ->where('platform', MarketplacePlatform::TIKTOK->value)
             ->when(!$this->showHidden, fn (Builder $q) => $q->where('is_hidden', false))
             ->orderByDesc('created_at');
@@ -105,16 +105,19 @@ class TikTokOrdersPage extends Page implements HasTable
                 TextColumn::make('status')
                     ->label('Status')
                     ->badge()
+                    ->state(fn (MarketplaceOrder $record): string => $this->resolveStage($record))
                     ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'COMPLETE' => 'Selesai / Dikirim',
-                        'OPEN' => 'Belum dibayar / Menunggu',
-                        'CANCEL' => 'Dibatalkan',
+                        'menunggu' => 'Menunggu',
+                        'dikirim' => 'Dikirim',
+                        'selesai' => 'Selesai',
+                        'cancel' => 'Dibatalkan',
                         default => $state,
                     })
                     ->color(fn (string $state): string => match ($state) {
-                        'COMPLETE' => 'success',
-                        'OPEN' => 'warning',
-                        'CANCEL' => 'danger',
+                        'menunggu' => 'warning',
+                        'dikirim' => 'info',
+                        'selesai' => 'success',
+                        'cancel' => 'danger',
                         default => 'gray',
                     }),
 
@@ -161,25 +164,27 @@ class TikTokOrdersPage extends Page implements HasTable
                 SelectFilter::make('status')
                     ->label('Status')
                     ->options([
-                        'COMPLETE' => 'Selesai / Dikirim',
-                        'OPEN' => 'Belum dibayar / Menunggu',
-                        'CANCEL' => 'Dibatalkan',
-                    ]),
-
-                SelectFilter::make('proses')
-                    ->label('Status Proses')
-                    ->options([
-                        'belum' => 'Belum Diproses',
-                        'selesai' => 'Sudah Diproses',
-                        'cancel' => 'Dibatalkan (Skipped)',
+                        'menunggu' => 'Menunggu',
+                        'dikirim' => 'Dikirim',
+                        'selesai' => 'Selesai',
+                        'cancel' => 'Dibatalkan',
                     ])
                     ->query(function (Builder $query, array $data): void {
                         $value = $data['value'] ?? null;
+
                         if (filled($value)) {
                             match ($value) {
-                                'belum' => $query->whereNull('processed_at')->where('status', '!=', 'CANCEL'),
-                                'selesai' => $query->whereNotNull('processed_at')->where('status', '!=', 'CANCEL'),
-                                'cancel' => $query->where('status', 'CANCEL'),
+                                'menunggu' => $query
+                                    ->whereNull('processed_at')
+                                    ->where('status', '!=', 'CANCEL'),
+                                'dikirim' => $query
+                                    ->whereNotNull('processed_at')
+                                    ->where('status', '!=', 'CANCEL')
+                                    ->whereDoesntHave('salesOrder.salesInvoices', fn (Builder $q) => $q->where('status', 'PAID')),
+                                'selesai' => $query
+                                    ->whereHas('salesOrder.salesInvoices', fn (Builder $q) => $q->where('status', 'PAID')),
+                                'cancel' => $query
+                                    ->where('status', 'CANCEL'),
                                 default => null,
                             };
                         }
@@ -325,5 +330,24 @@ class TikTokOrdersPage extends Page implements HasTable
             ->emptyStateHeading('Tidak ada orderan TikTok')
             ->emptyStateDescription('Import file pesanan TikTok terlebih dahulu di menu "Import TikTok".')
             ->emptyStateIcon('heroicon-o-shopping-bag');
+    }
+
+    private function resolveStage(MarketplaceOrder $record): string
+    {
+        if ($record->status === 'CANCEL') {
+            return 'cancel';
+        }
+
+        $invoice = $record->salesOrder?->salesInvoices->first();
+
+        if ($invoice && $invoice->status === 'PAID') {
+            return 'selesai';
+        }
+
+        if ($record->processed_at !== null || $record->sales_order_id !== null) {
+            return 'dikirim';
+        }
+
+        return 'menunggu';
     }
 }

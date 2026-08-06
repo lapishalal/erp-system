@@ -66,7 +66,7 @@ body { font-family: Arial, sans-serif; font-size: 12px; }
             {{-- === DIUBAH: LABEL QTY MENJADI JUMLAH KIRIM, DATA TETAP qty === --}}
             <td class="right">{{ number_format($d->qty, 0, ',', '.') }}</td>
             {{-- === TAMBAHAN: AMBIL SISA DARI salesOrderDetail.remaining_qty === --}}
-            <td class="right">{{ number_format(max(0, ($d->salesOrderDetail?->remaining_qty ?? 0) - $d->qty), 0, ',', '.') }}</td>
+            <td class="right">{{ number_format(max(0, $d->salesOrderDetail?->remaining_qty ?? 0), 0, ',', '.') }}</td>
         </tr>
         @endforeach
     </tbody>
