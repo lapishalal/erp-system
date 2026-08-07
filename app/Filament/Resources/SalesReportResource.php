@@ -10,6 +10,8 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Filament\Notifications\Notification;
+use App\Services\AdminFeeBackfillService;
 
 class SalesReportResource extends Resource
 {
@@ -91,8 +93,19 @@ class SalesReportResource extends Resource
                             ->label('Total HPP'),
                     ]),
 
+                Tables\Columns\TextColumn::make('admin_fee')
+                    ->label('Biaya Admin')
+                    ->money('IDR')
+                    ->alignEnd()
+                    ->sortable()
+                    ->summarize([
+                        Tables\Columns\Summarizers\Sum::make()
+                            ->money('IDR')
+                            ->label('Total Biaya Admin'),
+                    ]),
+
                 Tables\Columns\TextColumn::make('profit')
-                    ->label('Profit')
+                    ->label('Profit Bersih')
                     ->money('IDR')
                     ->alignEnd()
                     ->color('success')
@@ -100,7 +113,7 @@ class SalesReportResource extends Resource
                     ->summarize([
                         Tables\Columns\Summarizers\Sum::make()
                             ->money('IDR')
-                            ->label('Total Profit'),
+                            ->label('Total Profit Bersih'),
                     ]),
 
                 Tables\Columns\TextColumn::make('margin')
@@ -194,6 +207,24 @@ class SalesReportResource extends Resource
                     ->icon('heroicon-o-funnel'),
             )
             ->headerActions([
+                Tables\Actions\Action::make('backfillAdminFee')
+                    ->label('Backfill Admin Fee')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Backfill Admin Fee')
+                    ->modalDescription('Hitung ulang kolom Biaya Admin & Profit Bersih untuk order TikTok yang sudah settlement. Aman dijalankan berulang kali (idempoten). Berguna untuk shared hosting yang tidak punya terminal.')
+                    ->modalSubmitActionLabel('Ya, Backfill')
+                    ->action(function (): void {
+                        $updated = AdminFeeBackfillService::run();
+
+                        Notification::make()
+                            ->title('Backfill selesai')
+                            ->body("{$updated} order TikTok diperbarui.")
+                            ->success()
+                            ->send();
+                    }),
+
                 // =====================================================================
                 // PERBAIKAN PROGRAMATIK (PRIORITAS SEDANG):
                 // Meneruskan parameter filter yang sedang aktif dari Filament Table ke Route Export

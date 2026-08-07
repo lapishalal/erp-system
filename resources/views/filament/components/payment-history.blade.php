@@ -3,34 +3,44 @@
     $state = $getState();
     $total = $state['total'] ?? 0;
     $paid = $state['paid'] ?? 0;
+    $adminFee = $state['admin_fee'] ?? 0;
     $remaining = $state['remaining'] ?? 0;
     $payments = $state['payments'] ?? collect();
+
+    $paymentCount = $payments->count();
+    if ($adminFee > 0) {
+        $paymentCount += 1;
+    }
 @endphp
 
 <div class="w-full space-y-4">
     {{-- Ringkasan --}}
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div class="bg-gray-50 rounded-lg border border-gray-200 p-4">
             <p class="text-xs font-medium text-gray-500">Total Faktur</p>
             <p class="text-lg font-bold text-gray-800 mt-1">Rp {{ number_format($total, 0, ',', '.') }}</p>
         </div>
         <div class="bg-green-50 rounded-lg border border-green-200 p-4">
-            <p class="text-xs font-medium text-green-600">Sudah Dibayar</p>
+            <p class="text-xs font-medium text-green-600">Sudah Dibayar (Kas)</p>
             <p class="text-lg font-bold text-green-700 mt-1">Rp {{ number_format($paid, 0, ',', '.') }}</p>
         </div>
-        <div class="{{ $remaining > 0 ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200' }} rounded-lg border p-4">
-            <p class="text-xs font-medium {{ $remaining > 0 ? 'text-amber-600' : 'text-blue-600' }}">Sisa Tagihan</p>
-            <p class="text-lg font-bold {{ $remaining > 0 ? 'text-amber-700' : 'text-blue-700' }} mt-1">Rp {{ number_format($remaining, 0, ',', '.') }}</p>
+        <div class="bg-amber-50 rounded-lg border border-amber-200 p-4">
+            <p class="text-xs font-medium text-amber-600">Potongan Admin</p>
+            <p class="text-lg font-bold text-amber-700 mt-1">Rp {{ number_format($adminFee, 0, ',', '.') }}</p>
+        </div>
+        <div class="{{ $remaining > 0 ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200' }} rounded-lg border p-4">
+            <p class="text-xs font-medium {{ $remaining > 0 ? 'text-red-600' : 'text-blue-600' }}">Sisa Tagihan</p>
+            <p class="text-lg font-bold {{ $remaining > 0 ? 'text-red-700' : 'text-blue-700' }} mt-1">Rp {{ number_format($remaining, 0, ',', '.') }}</p>
         </div>
     </div>
 
     {{-- Riwayat Pembayaran --}}
     <div class="border rounded-lg overflow-hidden">
         <div class="bg-gray-50 border-b border-gray-200 px-4 py-2">
-            <p class="text-sm font-semibold text-gray-700">Riwayat Pembayaran ({{ $payments->count() }})</p>
+            <p class="text-sm font-semibold text-gray-700">Riwayat Pembayaran ({{ $paymentCount }})</p>
         </div>
 
-        @if($payments->isEmpty())
+        @if($payments->isEmpty() && $adminFee <= 0)
             <div class="px-4 py-6 text-center">
                 <p class="text-sm text-gray-400">Belum ada pembayaran tercatat</p>
             </div>
@@ -54,7 +64,21 @@
                                 <td class="px-4 py-2 text-gray-500">{{ $payment->description }}</td>
                             </tr>
                         @endforeach
+                        @if($adminFee > 0)
+                            <tr class="bg-amber-50">
+                                <td class="px-4 py-2 text-gray-500">{{ $payments->count() + 1 }}</td>
+                                <td class="px-4 py-2">—</td>
+                                <td class="px-4 py-2 font-semibold text-amber-600">- Rp {{ number_format($adminFee, 0, ',', '.') }}</td>
+                                <td class="px-4 py-2 text-gray-500">Potongan admin marketplace (pengurang piutang)</td>
+                            </tr>
+                        @endif
                     </tbody>
+                    <tfoot>
+                        <tr class="bg-gray-50 font-semibold">
+                            <td class="px-4 py-2" colspan="3">Total Pembayaran</td>
+                            <td class="px-4 py-2 text-right">Rp {{ number_format($paid + $adminFee, 0, ',', '.') }}</td>
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
         @endif

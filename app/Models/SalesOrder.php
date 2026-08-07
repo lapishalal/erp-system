@@ -22,6 +22,7 @@ class SalesOrder extends Model
         'total_qty',
         'total_amount',
         'total_cost',
+        'admin_fee',
         'profit',
         'notes',
         'created_by',
@@ -36,6 +37,7 @@ class SalesOrder extends Model
         'total_qty' => 'integer',
         'total_amount' => 'decimal:2',
         'total_cost' => 'decimal:2',
+        'admin_fee' => 'decimal:2',
         'profit' => 'decimal:2',
         'is_dropship' => 'boolean',
     ];

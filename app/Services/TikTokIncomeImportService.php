@@ -31,7 +31,7 @@ class TikTokIncomeImportService
      * Kode akun Biaya Admin Marketplace TikTok.
      * Pastikan akun ini ada di Chart of Accounts (jalankan ChartOfAccountSeeder).
      */
-    private const COA_ADMIN_FEE = '5-30001';
+    private const COA_ADMIN_FEE = '5-20008';
 
     /**
      * Toleransi selisih pembulatan (Rp). Jika selisih < nilai ini, dianggap lunas.
@@ -649,7 +649,7 @@ class TikTokIncomeImportService
                 . "Selisih: " . number_format(abs($adminFee), 0, ',', '.') . " akan dicatat sebagai pendapatan lain.");
         }
 
-        // --- LANGKAH 3: Paksa invoice menjadi LUNAS ---
+// --- LANGKAH 3: Paksa invoice menjadi LUNAS ---
         // Meskipun paid_amount sudah di-update oleh CashIn::booted(),
         // kita pastikan invoice total terbayar penuh agar tidak PARTIAL.
         $invoice->refresh();
@@ -659,11 +659,22 @@ class TikTokIncomeImportService
             $invoice->save();
 
             Log::info("TikTok Income: Invoice #{$invoice->invoice_number} dipaksa LUNAS.", [
-                'order_id'         => $orderId,
-                'invoice_total'    => $invoiceTotal,
-                'settlement_amount' => $settlementAmount,
-                'admin_fee'        => $adminFee,
+                'order_id'            => $orderId,
+                'invoice_total'       => $invoiceTotal,
+                'settlement_amount'   => $settlementAmount,
+                'admin_fee'           => $adminFee,
             ]);
+        }
+
+        // --- LANGKAH 4: Simpan admin_fee ke SO & hitung ulang profit bersih ---
+        // Profit TikTok = kas yang benar-benar cair (settlement) − HPP
+        //   = (total invoice − admin_fee) − total_cost
+        $so = $invoice->salesOrder;
+        if ($so) {
+            $netAdminFee = max(0, $adminFee);
+            $so->admin_fee = $netAdminFee;
+            $so->profit    = round((float) $so->total_amount - (float) $so->total_cost - $netAdminFee, 2);
+            $so->saveQuietly();
         }
     }
 

@@ -25,11 +25,13 @@ class PaymentHistory extends Entry
 
         $total = (float) $record->total;
         $paid = (float) $payments->sum('amount');
+        $adminFee = (float) ($record->salesOrder?->admin_fee ?? 0);
 
         return [
             'total' => $total,
             'paid' => $paid,
-            'remaining' => max(0, $total - $paid),
+            'admin_fee' => $adminFee,
+            'remaining' => max(0, $total - $paid - $adminFee),
             'payments' => $payments,
         ];
     }
