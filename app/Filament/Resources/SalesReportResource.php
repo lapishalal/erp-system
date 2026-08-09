@@ -12,6 +12,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Filament\Notifications\Notification;
 use App\Services\AdminFeeBackfillService;
+use App\Services\InvoiceBackfillService;
 
 class SalesReportResource extends Resource
 {
@@ -221,6 +222,24 @@ class SalesReportResource extends Resource
                         Notification::make()
                             ->title('Backfill selesai')
                             ->body("{$updated} order TikTok diperbarui.")
+                            ->success()
+                            ->send();
+                    }),
+
+                Tables\Actions\Action::make('generateMissingInvoices')
+                    ->label('Generate Invoice Otomatis')
+                    ->icon('heroicon-o-document-plus')
+                    ->color('primary')
+                    ->requiresConfirmation()
+                    ->modalHeading('Generate Invoice Otomatis')
+                    ->modalDescription(fn () => 'Buat invoice untuk semua SO "offline" berstatus COMPLETE yang belum punya faktur. Aman dijalankan berulang kali (idempoten) — SO yang sudah punya invoice di-skip.')
+                    ->modalSubmitActionLabel('Ya, Generate')
+                    ->action(function (): void {
+                        $created = InvoiceBackfillService::run();
+
+                        Notification::make()
+                            ->title('Invoice berhasil dibuat')
+                            ->body("{$created} invoice baru dibuat dari SO yang belum memiliki faktur.")
                             ->success()
                             ->send();
                     }),

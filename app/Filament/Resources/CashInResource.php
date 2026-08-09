@@ -12,6 +12,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class CashInResource extends Resource
 {
@@ -103,18 +104,47 @@ class CashInResource extends Resource
                         'OTHER_INCOME' => 'Pendapatan Lain',
                     }),
                 Tables\Columns\TextColumn::make('customer.name')
+                    ->searchable()
                     ->placeholder('-'),
                 Tables\Columns\TextColumn::make('amount')
                     ->money('IDR'),
                 Tables\Columns\TextColumn::make('description')
+                    ->searchable()
                     ->limit(50),
             ])
+            ->defaultSort('date', 'desc')
             ->filters([
+                Tables\Filters\Filter::make('periode')
+                    ->label('Periode')
+                    ->form([
+                        Forms\Components\DatePicker::make('dari')
+                            ->label('Dari Tanggal')
+                            ->default(now()->startOfMonth()),
+                        Forms\Components\DatePicker::make('sampai')
+                            ->label('Sampai Tanggal')
+                            ->default(now()->endOfMonth()),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['dari'], fn (Builder $query, $date) => $query->whereDate('date', '>=', $date))
+                            ->when($data['sampai'], fn (Builder $query, $date) => $query->whereDate('date', '<=', $date));
+                    }),
                 Tables\Filters\SelectFilter::make('type')
+                    ->label('Jenis')
                     ->options([
                         'CUSTOMER_PAYMENT' => 'Pembayaran Customer',
                         'OTHER_INCOME' => 'Pendapatan Lain',
                     ]),
+                Tables\Filters\SelectFilter::make('customer_id')
+                    ->label('Customer')
+                    ->relationship('customer', 'name')
+                    ->searchable()
+                    ->preload(),
+                Tables\Filters\SelectFilter::make('account_id')
+                    ->label('Akun Kas/Bank')
+                    ->relationship('account', 'name')
+                    ->searchable()
+                    ->preload(),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),

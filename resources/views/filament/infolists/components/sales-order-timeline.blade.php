@@ -42,8 +42,11 @@
     @endif
 
     {{-- Timeline Container --}}
-    <div class="relative px-4 py-6 bg-white rounded-xl border border-gray-200 shadow-sm">
-        
+    <div class="relative overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        {{-- Bungkus scroll horizontal agar ramah mobile (geser ke samping) --}}
+        <div class="overflow-x-auto overscroll-x-contain">
+            <div class="relative min-w-[640px] px-4 py-6">
+
         {{-- Progress Line Background --}}
         <div class="absolute top-[2.25rem] left-12 right-12 h-1 bg-gray-200 rounded-full">
             <div 
@@ -137,6 +140,9 @@
                     </div>
                 </button>
             @endforeach
+        </div>
+
+            </div>
         </div>
     </div>
 
