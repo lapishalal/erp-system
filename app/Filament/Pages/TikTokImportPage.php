@@ -51,7 +51,6 @@ class TikTokImportPage extends Page implements HasForms
                     ->schema([
                         FileUpload::make('order_file')
                             ->label('File Pesanan')
-                            ->acceptedFileTypes(['text/csv', 'application/vnd.ms-excel', 'text/plain', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
                             ->maxSize(10240)
                             ->directory('imports/tiktok-temp')
                             ->helperText('Format: CSV atau XLSX "Semua Pesanan" dari TikTok Seller Center'),
@@ -93,7 +92,6 @@ class TikTokImportPage extends Page implements HasForms
                     ->schema([
                         FileUpload::make('income_file')
                             ->label('File Income')
-                            ->acceptedFileTypes(['text/csv', 'application/vnd.ms-excel', 'text/plain', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
                             ->maxSize(10240)
                             ->directory('imports/tiktok-temp')
                             ->helperText('Format: CSV atau XLSX Income dari TikTok Seller Center'),
@@ -220,12 +218,28 @@ class TikTokImportPage extends Page implements HasForms
             Notification::make()
                 ->title('Import Income Berhasil')
                 ->body(sprintf(
-                    "Total: %d | Dibuat/Dibayar: %d | Dilewati: %d | Error: %d",
-                    $results['total'], $results['created'], $results['skipped'], $results['errors']
+                    "Total: %d | Dibuat/Dibayar: %d | Dilewati: %d | Perlu Review: %d | Error: %d",
+                    $results['total'], $results['created'], $results['skipped'],
+                    $results['review'] ?? 0, $results['errors']
                 ))
                 ->success()
                 ->persistent()
                 ->send();
+
+            if (($results['review'] ?? 0) > 0) {
+                Notification::make()
+                    ->title($results['review'] . ' order perlu cek manual')
+                    ->body('Ada pesanan dengan settlement Rp 0 (kemungkinan retur/cancel). Periksa di halaman "Review Settlement TikTok".')
+                    ->warning()
+                    ->persistent()
+                    ->actions([
+                        \Filament\Notifications\Actions\Action::make('goSettlementReview')
+                            ->label('Buka Review Settlement')
+                            ->button()
+                            ->url(\App\Filament\Pages\TikTokSettlementReviewPage::getUrl(), shouldOpenInNewTab: false),
+                    ])
+                    ->send();
+            }
 
             if ($results['errors'] > 0) {
                 $errorDetails = collect($results['details'])

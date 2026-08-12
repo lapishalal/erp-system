@@ -50,54 +50,28 @@
                 @endforeach
             </div>
 
-            <div class="overflow-x-auto bg-white rounded-xl shadow-sm border dark:bg-gray-800">
-                <table class="w-full text-sm">
-                    <thead class="bg-gray-50 dark:bg-gray-700">
-                        <tr>
-                            <th class="px-4 py-3 text-left font-semibold">Customer</th>
-                            <th class="px-4 py-3 text-left font-semibold">No. Invoice</th>
-                            <th class="px-4 py-3 text-center font-semibold">Jatuh Tempo</th>
-                            <th class="px-4 py-3 text-right font-semibold">Total</th>
-                            <th class="px-4 py-3 text-right font-semibold">Dibayar</th>
-                            <th class="px-4 py-3 text-right font-semibold">Sisa</th>
-                            <th class="px-4 py-3 text-center font-semibold">Tempo (hari)</th>
-                            <th class="px-4 py-3 text-left font-semibold">Kategori</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
-                        @forelse($report['rows'] as $row)
-                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                <td class="px-4 py-3 font-medium">{{ $row->customer }}</td>
-                                <td class="px-4 py-3 font-mono text-xs">{{ $row->invoice_number }}</td>
-                                <td class="px-4 py-3 text-center">{{ $row->due_date ? \Carbon\Carbon::parse($row->due_date)->format('d M Y') : '-' }}</td>
-                                <td class="px-4 py-3 text-right">Rp {{ number_format($row->total, 0, ',', '.') }}</td>
-                                <td class="px-4 py-3 text-right text-green-600">Rp {{ number_format($row->paid, 0, ',', '.') }}</td>
-                                <td class="px-4 py-3 text-right font-semibold text-red-600">Rp {{ number_format($row->remaining, 0, ',', '.') }}</td>
-                                <td class="px-4 py-3 text-center">{{ $row->days_overdue }}</td>
-                                <td class="px-4 py-3">
-                                    <span class="text-xs px-2 py-0.5 rounded-full
-                                        {{ $row->bucket === 'above_90' ? 'bg-red-100 text-red-700' : ($row->bucket === 'current' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700') }}">
-                                        {{ $bucketLabels[$row->bucket] }}
-                                    </span>
-                                </td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td class="px-4 py-6 text-center text-gray-500" colspan="8">
-                                    Tidak ada piutang outstanding
-                                </td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                    <tfoot class="bg-gray-100 dark:bg-gray-700 font-semibold">
-                        <tr>
-                            <td class="px-4 py-3" colspan="5">TOTAL</td>
-                            <td class="px-4 py-3 text-right text-red-600">Rp {{ number_format($report['total_remaining'], 0, ',', '.') }}</td>
-                            <td colspan="2"></td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
+            <x-report-table
+                :title="'Detail Piutang Outstanding'"
+                :rows="$report['rows']"
+                :totals="(object) ['total_remaining' => $report['total_remaining']]"
+                :search="['customer', 'invoice_number']"
+                empty="Tidak ada piutang outstanding"
+                :footer="[
+                    ['text' => 'TOTAL', 'colspan' => 5, 'align' => 'text-left'],
+                    ['value_key' => 'total_remaining', 'colspan' => 1, 'align' => 'text-right'],
+                    ['text' => '', 'colspan' => 2],
+                ]"
+                :columns="[
+                    ['label' => 'Customer', 'key' => 'customer'],
+                    ['label' => 'No. Invoice', 'key' => 'invoice_number', 'mono' => true],
+                    ['label' => 'Jatuh Tempo', 'key' => 'due_date', 'type' => 'date', 'align' => 'text-center'],
+                    ['label' => 'Total', 'key' => 'total', 'type' => 'money', 'align' => 'text-right'],
+                    ['label' => 'Dibayar', 'key' => 'paid', 'type' => 'money', 'align' => 'text-right'],
+                    ['label' => 'Sisa', 'key' => 'remaining', 'type' => 'money', 'color' => 'text-red-600 font-semibold', 'align' => 'text-right'],
+                    ['label' => 'Tempo (hari)', 'key' => 'days_overdue', 'type' => 'number', 'align' => 'text-center'],
+                    ['label' => 'Kategori', 'key' => 'bucket', 'type' => 'badge', 'map' => $bucketLabels, 'align' => 'text-center', 'colors' => ['current' => 'bg-green-100 text-green-700 ring-green-600/20', '1_30' => 'bg-amber-100 text-amber-700 ring-amber-600/20', '31_60' => 'bg-amber-100 text-amber-700 ring-amber-600/20', '61_90' => 'bg-orange-100 text-orange-700 ring-orange-600/20', 'above_90' => 'bg-red-100 text-red-700 ring-red-600/20']],
+                ]"
+            />
         </div>
     @else
         <div class="mt-6 bg-white rounded-xl shadow-sm border p-6 text-center dark:bg-gray-800">

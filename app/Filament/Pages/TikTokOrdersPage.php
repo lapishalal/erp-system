@@ -326,6 +326,17 @@ class TikTokOrdersPage extends Page implements HasTable
                     ->icon('heroicon-o-map-pin')
                     ->color('warning')
                     ->url(TikTokUnmappedProductPage::getUrl()),
+
+                Action::make('goSettlementReview')
+                    ->label('Review Settlement')
+                    ->icon('heroicon-o-shield-exclamation')
+                    ->color('danger')
+                    ->url(TikTokSettlementReviewPage::getUrl())
+                    ->badge(MarketplaceOrder::query()
+                        ->where('platform', MarketplacePlatform::TIKTOK->value)
+                        ->where('needs_review', true)
+                        ->where('review_status', 'pending')
+                        ->count() ?: null),
             ])
             ->emptyStateHeading('Tidak ada orderan TikTok')
             ->emptyStateDescription('Import file pesanan TikTok terlebih dahulu di menu "Import TikTok".')

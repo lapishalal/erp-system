@@ -79,9 +79,16 @@ class ReturnReportPage extends Page implements HasForms
             ->orderBy('processed_at')
             ->get();
 
+        $marketplaceRows = $marketplaceReturns->map(fn ($o) => (object) [
+            'platform' => strtoupper($o->platform?->value ?? ''),
+            'order_id' => $o->platform_order_id,
+            'processed_at' => $o->processed_at,
+            'total' => (float) $o->items->sum('subtotal_after_discount'),
+        ]);
+
         return [
             'purchase_returns' => $purchaseReturns,
-            'marketplace_returns' => $marketplaceReturns,
+            'marketplace_returns' => $marketplaceRows,
             'purchase_total' => $purchaseReturns->sum('total_amount'),
             'marketplace_total' => $marketplaceReturns->sum(fn ($o) => $o->items->sum('subtotal_after_discount')),
         ];

@@ -78,6 +78,7 @@ class AdminPanelProvider extends PanelProvider
 				\App\Filament\Pages\TikTokImportPage::class,
                 \App\Filament\Pages\TikTokUnmappedProductPage::class,
                 \App\Filament\Pages\TikTokOrdersPage::class,
+                \App\Filament\Pages\TikTokSettlementReviewPage::class,
                 \App\Filament\Pages\CustomerReportPage::class,
                 \App\Filament\Pages\TrialBalanceReportPage::class,
                 \App\Filament\Pages\ReceivableReportPage::class,

@@ -32,46 +32,27 @@
                 </div>
             </div>
 
-            <div class="overflow-x-auto bg-white rounded-xl shadow-sm border dark:bg-gray-800">
-                <table class="w-full text-sm">
-                    <thead class="bg-gray-50 dark:bg-gray-700">
-                        <tr>
-                            <th class="px-4 py-3 text-left font-semibold">Kode</th>
-                            <th class="px-4 py-3 text-left font-semibold">Nama Barang</th>
-                            <th class="px-4 py-3 text-center font-semibold">Gudang</th>
-                            <th class="px-4 py-3 text-right font-semibold">Qty</th>
-                            <th class="px-4 py-3 text-right font-semibold">Harga Pokok</th>
-                            <th class="px-4 py-3 text-right font-semibold">Nilai</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
-                        @forelse($report['rows'] as $row)
-                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                <td class="px-4 py-3 font-mono text-xs">{{ $row->code }}</td>
-                                <td class="px-4 py-3 font-medium">{{ $row->name }}</td>
-                                <td class="px-4 py-3 text-center">{{ $row->warehouse }}</td>
-                                <td class="px-4 py-3 text-right">{{ number_format($row->qty, 0, ',', '.') }}</td>
-                                <td class="px-4 py-3 text-right">Rp {{ number_format($row->cost, 0, ',', '.') }}</td>
-                                <td class="px-4 py-3 text-right font-semibold text-blue-700">Rp {{ number_format($row->value, 0, ',', '.') }}</td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td class="px-4 py-6 text-center text-gray-500" colspan="6">
-                                    Tidak ada stok barang
-                                </td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                    <tfoot class="bg-gray-100 dark:bg-gray-700 font-semibold">
-                        <tr>
-                            <td class="px-4 py-3" colspan="3">TOTAL</td>
-                            <td class="px-4 py-3 text-right">{{ number_format($report['total_qty'], 0, ',', '.') }}</td>
-                            <td></td>
-                            <td class="px-4 py-3 text-right text-blue-700">Rp {{ number_format($report['total_value'], 0, ',', '.') }}</td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
+            <x-report-table
+                :title="'Detail Nilai Persediaan'"
+                :rows="$report['rows']"
+                :totals="(object) ['total_qty' => $report['total_qty'], 'total_value' => $report['total_value']]"
+                :search="['code', 'name', 'warehouse']"
+                empty="Tidak ada stok barang"
+                :footer="[
+                    ['text' => 'TOTAL', 'colspan' => 3, 'align' => 'text-left'],
+                    ['value_key' => 'total_qty', 'type' => 'number', 'colspan' => 1, 'align' => 'text-right'],
+                    ['text' => '', 'colspan' => 1, 'align' => 'text-right'],
+                    ['value_key' => 'total_value', 'colspan' => 1, 'align' => 'text-right'],
+                ]"
+                :columns="[
+                    ['label' => 'Kode', 'key' => 'code', 'mono' => true],
+                    ['label' => 'Nama Barang', 'key' => 'name'],
+                    ['label' => 'Gudang', 'key' => 'warehouse', 'align' => 'text-center'],
+                    ['label' => 'Qty', 'key' => 'qty', 'type' => 'number', 'align' => 'text-right'],
+                    ['label' => 'Harga Pokok', 'key' => 'cost', 'type' => 'money', 'align' => 'text-right'],
+                    ['label' => 'Nilai', 'key' => 'value', 'type' => 'money', 'color' => 'text-blue-700 font-semibold', 'align' => 'text-right'],
+                ]"
+            />
         </div>
     @else
         <div class="mt-6 bg-white rounded-xl shadow-sm border p-6 text-center dark:bg-gray-800">

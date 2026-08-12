@@ -51,6 +51,7 @@ class TikTokIncomeImportService
             'created' => 0,
             'updated' => 0,
             'skipped' => 0,
+            'review'  => 0,
             'errors'  => 0,
             'details' => [],
         ];
@@ -72,6 +73,7 @@ class TikTokIncomeImportService
                     'created', 'paid' => $results['created']++,
                     'updated'         => $results['updated']++,
                     'skipped'         => $results['skipped']++,
+                    'needs_review'    => $results['review']++,
                     default           => null,
                 };
 
@@ -189,6 +191,52 @@ class TikTokIncomeImportService
         $mkOrder = MarketplaceOrder::where('platform', 'tiktok')
             ->where('platform_order_id', $orderId)
             ->first();
+
+        // ===== CASE ZERO: Settlement <= 0 (kemungkinan retur/cancel) → perlu cek manual =====
+        // Uang tidak cair, jadi jangan buat CashIn / jurnal admin fee / paksa invoice PAID.
+        if ($settlementAmount <= 0) {
+            // Kalau order memang sudah CANCEL, tidak perlu masuk daftar review.
+            if ($mkOrder && $mkOrder->status === 'CANCEL') {
+                return [
+                    'order_id' => $orderId,
+                    'action'   => 'skipped',
+                    'message'  => 'Order dibatalkan, settlement 0 (tidak perlu review)',
+                ];
+            }
+
+            // Simpan penanda review (buat record minimal jika order belum ada di ERP).
+            if (!$mkOrder) {
+                $mkOrder = MarketplaceOrder::create([
+                    'tenant_id'         => auth()->user()->tenant_id ?? null,
+                    'platform'          => MarketplacePlatform::TIKTOK,
+                    'platform_order_id' => $orderId,
+                    'status'            => 'OPEN',
+                    'settlement_amount' => 0,
+                    'needs_review'      => true,
+                    'review_status'     => 'pending',
+                    'raw_payload'       => [
+                        'source'            => 'income_csv_review',
+                        'settlement_amount' => 0,
+                        'revenue_gross'     => $revenueGross,
+                        'total_cost'        => $totalCost,
+                        'product_detail'    => $row['Detail produk terjual'] ?? '',
+                    ],
+                ]);
+            } else {
+                $mkOrder->update([
+                    'settlement_amount' => 0,
+                    'needs_review'      => true,
+                    'review_status'     => 'pending',
+                ]);
+            }
+
+            return [
+                'order_id'  => $orderId,
+                'action'    => 'needs_review',
+                'message'   => 'Settlement 0 → masuk daftar Review Settlement untuk cek manual (retur/cancel)',
+                'so_number' => $mkOrder->salesOrder?->so_number,
+            ];
+        }
 
         // ===== CASE A: Order NOT yet imported from Order CSV =====
         if (!$mkOrder) {

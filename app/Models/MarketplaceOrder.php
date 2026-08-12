@@ -27,6 +27,12 @@ class MarketplaceOrder extends Model
         'is_mapped',
         'error_message',
         'is_hidden',
+        'settlement_amount',
+        'needs_review',
+        'review_status',
+        'reviewed_at',
+        'reviewed_by',
+        'review_note',
     ];
 
     protected $casts = [
@@ -37,6 +43,9 @@ class MarketplaceOrder extends Model
         'processed_at' => 'datetime',
         'is_mapped' => 'boolean',
         'is_hidden' => 'boolean',
+        'settlement_amount' => 'decimal:2',
+        'needs_review' => 'boolean',
+        'reviewed_at' => 'datetime',
     ];
 
     public function getMappedItemsCountAttribute(): int
@@ -66,5 +75,10 @@ class MarketplaceOrder extends Model
     public function items(): HasMany
     {
         return $this->hasMany(MarketplaceOrderItem::class, 'marketplace_order_id');
+    }
+
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\User::class, 'reviewed_by');
     }
 }

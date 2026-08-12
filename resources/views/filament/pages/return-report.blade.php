@@ -26,75 +26,33 @@
                 </div>
             </div>
 
-            <div class="overflow-x-auto bg-white rounded-xl shadow-sm border dark:bg-gray-800">
-                <div class="bg-gray-50 border-b border-gray-200 px-4 py-2 dark:bg-gray-700">
-                    <p class="text-sm font-semibold text-gray-700 dark:text-gray-200">Retur Pembelian (ke Supplier)</p>
-                </div>
-                <table class="w-full text-sm">
-                    <thead class="bg-gray-50 dark:bg-gray-700">
-                        <tr>
-                            <th class="px-4 py-3 text-left font-semibold">No. Retur</th>
-                            <th class="px-4 py-3 text-center font-semibold">Tanggal</th>
-                            <th class="px-4 py-3 text-left font-semibold">Supplier</th>
-                            <th class="px-4 py-3 text-center font-semibold">Status</th>
-                            <th class="px-4 py-3 text-right font-semibold">Qty</th>
-                            <th class="px-4 py-3 text-right font-semibold">Total</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
-                        @forelse($report['purchase_returns'] as $r)
-                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                <td class="px-4 py-3 font-mono text-xs">{{ $r->return_number }}</td>
-                                <td class="px-4 py-3 text-center">{{ $r->date ? \Carbon\Carbon::parse($r->date)->format('d M Y') : '-' }}</td>
-                                <td class="px-4 py-3">{{ $r->supplier?->name ?? '-' }}</td>
-                                <td class="px-4 py-3 text-center">
-                                    <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{{ $r->status }}</span>
-                                </td>
-                                <td class="px-4 py-3 text-right">{{ $r->total_qty }}</td>
-                                <td class="px-4 py-3 text-right font-semibold">Rp {{ number_format($r->total_amount, 0, ',', '.') }}</td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td class="px-4 py-6 text-center text-gray-500" colspan="6">
-                                    Tidak ada retur pembelian pada periode ini
-                                </td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
+            <x-report-table
+                :title="'Retur Pembelian (ke Supplier)'"
+                :rows="$report['purchase_returns']"
+                :search="['return_number', 'supplier.name', 'status']"
+                empty="Tidak ada retur pembelian pada periode ini"
+                :columns="[
+                    ['label' => 'No. Retur', 'key' => 'return_number', 'mono' => true],
+                    ['label' => 'Tanggal', 'key' => 'date', 'type' => 'date', 'align' => 'text-center'],
+                    ['label' => 'Supplier', 'key' => 'supplier.name'],
+                    ['label' => 'Status', 'key' => 'status', 'align' => 'text-center'],
+                    ['label' => 'Qty', 'key' => 'total_qty', 'type' => 'number', 'align' => 'text-right'],
+                    ['label' => 'Total', 'key' => 'total_amount', 'type' => 'money', 'align' => 'text-right'],
+                ]"
+            />
 
-            <div class="overflow-x-auto bg-white rounded-xl shadow-sm border dark:bg-gray-800">
-                <div class="bg-gray-50 border-b border-gray-200 px-4 py-2 dark:bg-gray-700">
-                    <p class="text-sm font-semibold text-gray-700 dark:text-gray-200">Pembatalan / Retur Order Marketplace</p>
-                </div>
-                <table class="w-full text-sm">
-                    <thead class="bg-gray-50 dark:bg-gray-700">
-                        <tr>
-                            <th class="px-4 py-3 text-left font-semibold">Platform</th>
-                            <th class="px-4 py-3 text-left font-semibold">Order ID</th>
-                            <th class="px-4 py-3 text-center font-semibold">Diproses</th>
-                            <th class="px-4 py-3 text-right font-semibold">Total</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
-                        @forelse($report['marketplace_returns'] as $r)
-                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                <td class="px-4 py-3">{{ strtoupper($r->platform?->value ?? '') }}</td>
-                                <td class="px-4 py-3 font-mono text-xs">{{ $r->platform_order_id }}</td>
-                                <td class="px-4 py-3 text-center">{{ $r->processed_at ? $r->processed_at->format('d M Y H:i') : '-' }}</td>
-                                <td class="px-4 py-3 text-right font-semibold">Rp {{ number_format($r->items->sum('subtotal_after_discount'), 0, ',', '.') }}</td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td class="px-4 py-6 text-center text-gray-500" colspan="4">
-                                    Tidak ada pembatalan order marketplace pada periode ini
-                                </td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
+            <x-report-table
+                :title="'Pembatalan / Retur Order Marketplace'"
+                :rows="$report['marketplace_returns']"
+                :search="['platform', 'order_id']"
+                empty="Tidak ada pembatalan order marketplace pada periode ini"
+                :columns="[
+                    ['label' => 'Platform', 'key' => 'platform'],
+                    ['label' => 'Order ID', 'key' => 'order_id', 'mono' => true],
+                    ['label' => 'Diproses', 'key' => 'processed_at', 'type' => 'datetime', 'align' => 'text-center'],
+                    ['label' => 'Total', 'key' => 'total', 'type' => 'money', 'align' => 'text-right'],
+                ]"
+            />
         </div>
     @endif
 </x-filament-panels::page>

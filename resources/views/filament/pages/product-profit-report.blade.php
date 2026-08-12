@@ -36,54 +36,31 @@
                 </div>
             </div>
 
-            <div class="overflow-x-auto bg-white rounded-xl shadow-sm border dark:bg-gray-800">
-                <table class="w-full text-sm">
-                    <thead class="bg-gray-50 dark:bg-gray-700">
-                        <tr>
-                            <th class="px-4 py-3 text-left font-semibold">Kode</th>
-                            <th class="px-4 py-3 text-left font-semibold">Nama Produk</th>
-                            <th class="px-4 py-3 text-left font-semibold">Brand</th>
-                            <th class="px-4 py-3 text-right font-semibold">Qty</th>
-                            <th class="px-4 py-3 text-right font-semibold">Penjualan</th>
-                            <th class="px-4 py-3 text-right font-semibold">HPP</th>
-                            <th class="px-4 py-3 text-right font-semibold">Laba</th>
-                            <th class="px-4 py-3 text-right font-semibold">Margin</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
-                        @forelse($report['rows'] as $row)
-                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                <td class="px-4 py-3 font-mono text-xs">{{ $row->code }}</td>
-                                <td class="px-4 py-3 font-medium">{{ $row->name }}</td>
-                                <td class="px-4 py-3">{{ $row->brand }}</td>
-                                <td class="px-4 py-3 text-right">{{ number_format($row->qty, 0, ',', '.') }}</td>
-                                <td class="px-4 py-3 text-right">Rp {{ number_format($row->revenue, 0, ',', '.') }}</td>
-                                <td class="px-4 py-3 text-right">Rp {{ number_format($row->cost, 0, ',', '.') }}</td>
-                                <td class="px-4 py-3 text-right font-semibold {{ $row->profit >= 0 ? 'text-green-700' : 'text-red-700' }}">
-                                    Rp {{ number_format($row->profit, 0, ',', '.') }}
-                                </td>
-                                <td class="px-4 py-3 text-right">{{ number_format($row->margin, 1) }}%</td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td class="px-4 py-6 text-center text-gray-500" colspan="8">
-                                    Tidak ada data penjualan pada periode ini
-                                </td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                    <tfoot class="bg-gray-100 dark:bg-gray-700 font-semibold">
-                        <tr>
-                            <td class="px-4 py-3" colspan="3">TOTAL</td>
-                            <td class="px-4 py-3 text-right">{{ number_format($report['totals']['qty'], 0, ',', '.') }}</td>
-                            <td class="px-4 py-3 text-right">Rp {{ number_format($report['totals']['revenue'], 0, ',', '.') }}</td>
-                            <td class="px-4 py-3 text-right">Rp {{ number_format($report['totals']['cost'], 0, ',', '.') }}</td>
-                            <td class="px-4 py-3 text-right text-green-700">Rp {{ number_format($report['totals']['profit'], 0, ',', '.') }}</td>
-                            <td></td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
+            <x-report-table
+                :title="'Detail Laba per Produk'"
+                :rows="$report['rows']"
+                :totals="(object) $report['totals']"
+                :search="['code', 'name', 'brand']"
+                empty="Tidak ada data penjualan pada periode ini"
+                :footer="[
+                    ['text' => 'TOTAL', 'colspan' => 3, 'align' => 'text-left'],
+                    ['value_key' => 'qty', 'type' => 'number', 'colspan' => 1, 'align' => 'text-right'],
+                    ['value_key' => 'revenue', 'colspan' => 1, 'align' => 'text-right'],
+                    ['value_key' => 'cost', 'colspan' => 1, 'align' => 'text-right'],
+                    ['value_key' => 'profit', 'colspan' => 1, 'align' => 'text-right'],
+                    ['text' => '', 'colspan' => 1],
+                ]"
+                :columns="[
+                    ['label' => 'Kode', 'key' => 'code', 'mono' => true],
+                    ['label' => 'Nama Produk', 'key' => 'name'],
+                    ['label' => 'Brand', 'key' => 'brand'],
+                    ['label' => 'Qty', 'key' => 'qty', 'type' => 'number', 'align' => 'text-right'],
+                    ['label' => 'Penjualan', 'key' => 'revenue', 'type' => 'money', 'align' => 'text-right'],
+                    ['label' => 'HPP', 'key' => 'cost', 'type' => 'money', 'align' => 'text-right'],
+                    ['label' => 'Laba', 'key' => 'profit', 'type' => 'money', 'align' => 'text-right'],
+                    ['label' => 'Margin', 'key' => 'margin', 'type' => 'pct', 'align' => 'text-right'],
+                ]"
+            />
         </div>
     @endif
 </x-filament-panels::page>
