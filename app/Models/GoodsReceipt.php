@@ -50,9 +50,17 @@ class GoodsReceipt extends Model
         // ============================================
         // FIX: Auto jurnal saat status berubah ke RECEIVED
         // Refresh instance agar dapat data terbaru dari DB
+        // Jika status berpindah keluar dari RECEIVED, jurnal dihapus
         // ============================================
         static::updated(function (self $gr) {
-            if ($gr->isDirty('status') && $gr->status === 'RECEIVED') {
+            if ($gr->isDirty('status')) {
+                $gr->refresh();
+                if ($gr->status === 'RECEIVED') {
+                    self::createJournal($gr);
+                } else {
+                    self::deleteJournal($gr);
+                }
+            } elseif ($gr->status === 'RECEIVED' && $gr->isDirty('date')) {
                 $gr->refresh();
                 self::createJournal($gr);
             }
@@ -62,20 +70,29 @@ class GoodsReceipt extends Model
         // Hapus jurnal + restore stok & PO saat GR dihapus.
         // Detail dihapus via Eloquent agar event deleted-nya
         // mem-balik stok (updateStock -qty) & restore PO.
+        // Jurnal dihapus setelah detail, agar tidak ter-recreate
+        // oleh syncParentJournal saat detail terakhir dihapus.
         // ============================================
         static::deleting(function (self $gr) {
-            // Hapus jurnal terkait jika status RECEIVED
-            if ($gr->status === 'RECEIVED') {
-                \App\Models\JournalEntry::where('reference_type', self::class)
-                    ->where('reference_id', $gr->id)
-                    ->delete();
-            }
-
             $gr->load('details');
             foreach ($gr->details as $detail) {
                 $detail->delete();
             }
+
+            self::deleteJournal($gr);
         });
+    }
+
+    protected static function deleteJournal(self $gr): void
+    {
+        $journal = \App\Models\JournalEntry::where('reference_type', self::class)
+            ->where('reference_id', $gr->id)
+            ->first();
+
+        if ($journal) {
+            $journal->details()->delete();
+            $journal->delete();
+        }
     }
 
     // ============================================
@@ -84,16 +101,7 @@ class GoodsReceipt extends Model
     // ============================================
     public static function createJournal(self $gr): void
     {
-        // 1. Cek duplikasi: jika jurnal untuk GR ini sudah ada, skip
-        $existing = \App\Models\JournalEntry::where('reference_type', self::class)
-            ->where('reference_id', $gr->id)
-            ->first();
-
-        if ($existing) {
-            return;
-        }
-
-        // 2. Ambil akun
+        // 1. Ambil akun
         $persediaanId = self::getAccountIdByCode('1-20001'); // Persediaan Barang Dagang
         $hutangId = self::getAccountIdByCode('2-10001'); // Hutang Usaha
 
@@ -123,12 +131,49 @@ class GoodsReceipt extends Model
                 ->value('total_amount');
         }
 
-        // Safety: jika total masih 0, tidak buat jurnal
+        // ============================================
+        // FIX: Idempotent — update jurnal yang sudah ada
+        // (Bug: qty GR RECEIVED diedit, jurnal tidak pernah ter-update)
+        // ============================================
+        $existing = \App\Models\JournalEntry::where('reference_type', self::class)
+            ->where('reference_id', $gr->id)
+            ->first();
+
         if ($totalAmount <= 0) {
+            // Safety: total 0 → pastikan tidak ada jurnal
+            if ($existing) {
+                self::deleteJournal($gr);
+            }
             return;
         }
 
-        // 3. Buat jurnal header
+        if ($existing) {
+            // Hapus detail lama lalu rebuild dengan nilai terbaru
+            $existing->details()->delete();
+            $existing->update([
+                'date' => $gr->date,
+                'description' => 'Penerimaan barang: ' . $gr->gr_number,
+                'total_debit' => $totalAmount,
+                'total_credit' => $totalAmount,
+            ]);
+
+            $existing->details()->create([
+                'account_id' => $persediaanId,
+                'debit' => $totalAmount,
+                'credit' => 0,
+                'description' => 'Persediaan masuk dari GR ' . $gr->gr_number,
+            ]);
+            $existing->details()->create([
+                'account_id' => $hutangId,
+                'debit' => 0,
+                'credit' => $totalAmount,
+                'description' => 'Hutang supplier dari GR ' . $gr->gr_number,
+            ]);
+
+            return;
+        }
+
+        // 2. Buat jurnal header baru
         $journal = \App\Models\JournalEntry::create([
             'date' => $gr->date,
             'reference_type' => self::class,
@@ -140,7 +185,7 @@ class GoodsReceipt extends Model
             'created_by' => $gr->created_by,
         ]);
 
-        // 4. Debit: Persediaan
+        // 3. Debit: Persediaan
         $journal->details()->create([
             'account_id' => $persediaanId,
             'debit' => $totalAmount,
@@ -148,7 +193,7 @@ class GoodsReceipt extends Model
             'description' => 'Persediaan masuk dari GR ' . $gr->gr_number,
         ]);
 
-        // 5. Kredit: Hutang Usaha
+        // 4. Kredit: Hutang Usaha
         $journal->details()->create([
             'account_id' => $hutangId,
             'debit' => 0,

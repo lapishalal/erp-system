@@ -47,34 +47,65 @@ class GoodsReceiptDetail extends Model
             self::updateProductLastBuyPrice($detail);
             self::updateStock($detail, $detail->qty);
             self::createProductBuyPrice($detail);
+            self::syncParentJournal($detail->gr_id);
         });
 
         static::updated(function (self $detail) {
-            $originalQty = $detail->getOriginal('qty') ?? 0;
-            $delta = $detail->qty - $originalQty;
+            $originalQty = (int) ($detail->getOriginal('qty') ?? 0);
+            $originalProductId = $detail->getOriginal('product_id');
+
+            if ($originalProductId && $originalProductId !== $detail->product_id) {
+                // ============================================
+                // FIX: Produk diganti (misal salah pilih barang A, harusnya B)
+                // 1) Balik efek di produk lama
+                // 2) Terapkan ke produk baru
+                // ============================================
+                self::updatePurchaseOrder($detail, -$originalQty, $originalProductId);
+                self::updateStock($detail, -$originalQty, $originalProductId);
+                self::restoreLastBuyPrice($originalProductId, $detail->gr_id);
+                \App\Models\ProductBuyPrice::where('gr_id', $detail->gr_id)
+                    ->where('product_id', $originalProductId)
+                    ->delete();
+
+                self::updatePurchaseOrder($detail, $detail->qty);
+                self::updateProductLastBuyPrice($detail);
+                self::updateStock($detail, $detail->qty);
+                self::createProductBuyPrice($detail);
+            } else {
+                // Qty / harga berubah saja
+                $delta = $detail->qty - $originalQty;
+                self::updatePurchaseOrder($detail, $delta);
+                self::updateProductLastBuyPrice($detail);
+                self::updateStock($detail, $delta);
+                self::updateProductBuyPrice($detail);
+            }
 
             self::updateParentTotal($detail->gr_id);
-            self::updatePurchaseOrder($detail, $delta);
-            self::updateProductLastBuyPrice($detail);
-            self::updateStock($detail, $delta);
+            self::syncParentJournal($detail->gr_id);
         });
 
         static::deleted(function (self $detail) {
             self::updateParentTotal($detail->gr_id);
             self::updatePurchaseOrder($detail, -$detail->qty);
             self::updateStock($detail, -$detail->qty);
+            self::restoreLastBuyPrice($detail->product_id, $detail->gr_id);
+            \App\Models\ProductBuyPrice::where('gr_id', $detail->gr_id)
+                ->where('product_id', $detail->product_id)
+                ->delete();
+            self::syncParentJournal($detail->gr_id);
         });
+    }
 
-        // ============================================
-        // FIX BARU: Trigger jurnal setiap kali detail di-save
-        // Karena DB::afterCommit() tidak jalan tanpa transaction
-        // ============================================
-        static::created(function (self $detail) {
-            $gr = \App\Models\GoodsReceipt::find($detail->gr_id);
-            if ($gr && $gr->status === 'RECEIVED') {
-                \App\Models\GoodsReceipt::createJournal($gr);
-            }
-        });
+    // ============================================
+    // Sinkron jurnal GR (mask dari status RECEIVED)
+    // Formula createJournal dipanggil dari GoodsReceipt::createJournal — idempotent
+    // ============================================
+    protected static function syncParentJournal(int $grId): void
+    {
+        $gr = \App\Models\GoodsReceipt::find($grId);
+        if ($gr) {
+            \App\Models\GoodsReceipt::createJournal($gr);
+        }
     }
 
     protected static function createProductBuyPrice(self $detail): void
@@ -110,15 +141,17 @@ class GoodsReceiptDetail extends Model
         ]);
     }
 
-    protected static function updatePurchaseOrder(self $detail, int $delta): void
+    protected static function updatePurchaseOrder(self $detail, int $delta, ?int $productId = null): void
     {
         $gr = $detail->goodsReceipt;
         if (!$gr || !$gr->po_id) {
             return;
         }
 
+        $targetProductId = $productId ?? $detail->product_id;
+
         $poDetail = \App\Models\PurchaseOrderDetail::where('po_id', $gr->po_id)
-            ->where('product_id', $detail->product_id)
+            ->where('product_id', $targetProductId)
             ->first();
 
         if (!$poDetail) {
@@ -146,25 +179,59 @@ class GoodsReceiptDetail extends Model
         }
     }
 
-    protected static function updateProductLastBuyPrice(self $detail): void
+    protected static function updateProductLastBuyPrice(self $detail, ?int $productId = null): void
     {
-        $product = \App\Models\Product::find($detail->product_id);
+        $targetProductId = $productId ?? $detail->product_id;
+        $product = \App\Models\Product::find($targetProductId);
         if ($product && $detail->buy_price > 0) {
             $product->last_buy_price = $detail->buy_price;
             $product->save();
         }
     }
 
-    public static function updateStock(self $detail, int $delta): void
+    protected static function restoreLastBuyPrice(int $productId, ?int $excludeGrId): void
+    {
+        $latest = \App\Models\ProductBuyPrice::where('product_id', $productId)
+            ->where('gr_id', '!=', $excludeGrId)
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->first();
+
+        $product = \App\Models\Product::find($productId);
+        if ($product) {
+            $product->last_buy_price = $latest?->buy_price ?? 0;
+            $product->save();
+        }
+    }
+
+    protected static function updateProductBuyPrice(self $detail): void
+    {
+        $gr = \App\Models\GoodsReceipt::find($detail->gr_id);
+        if (!$gr) {
+            return;
+        }
+
+        \App\Models\ProductBuyPrice::where('gr_id', $detail->gr_id)
+            ->where('product_id', $detail->product_id)
+            ->update([
+                'buy_price' => $detail->buy_price,
+                'qty' => $detail->qty,
+                'date' => $gr->date,
+            ]);
+    }
+
+    public static function updateStock(self $detail, int $delta, ?int $productId = null): void
     {
         $gr = $detail->goodsReceipt;
         if (!$gr || !$gr->warehouse_id) {
             return;
         }
 
+        $targetProductId = $productId ?? $detail->product_id;
+
         $stock = \App\Models\ProductStock::firstOrCreate(
             [
-                'product_id' => $detail->product_id,
+                'product_id' => $targetProductId,
                 'warehouse_id' => $gr->warehouse_id,
             ],
             [
@@ -179,27 +246,29 @@ class GoodsReceiptDetail extends Model
         $stock->available_stock = $stock->physical_stock;
         $stock->save();
 
+        $appliedDelta = $stock->physical_stock - $qtyBefore;
+
         \App\Models\StockMovement::create([
-            'product_id' => $detail->product_id,
+            'product_id' => $targetProductId,
             'warehouse_id' => $gr->warehouse_id,
             'qty_before' => $qtyBefore,
             'qty_after' => $stock->physical_stock,
-            'delta' => $stock->physical_stock - $qtyBefore,
+            'delta' => $appliedDelta,
             'type' => 'GR',
             'reference_type' => self::class,
             'reference_id' => $detail->gr_id,
             'notes' => 'Goods Receipt #' . ($gr->gr_number ?? $gr->id),
         ]);
-        
+
         $supplierName = $gr->supplier?->name ?? '-';
 
         \App\Models\StockTransaction::create([
-            'product_id' => $detail->product_id,
+            'product_id' => $targetProductId,
             'warehouse_id' => $gr->warehouse_id,
-            'type' => 'IN',
+            'type' => $appliedDelta >= 0 ? 'IN' : 'OUT',
             'reference_type' => self::class,
             'reference_id' => $detail->gr_id,
-            'qty' => abs($detail->qty),
+            'qty' => $appliedDelta,
             'price' => $detail->buy_price,
             'remaining_stock' => $stock->physical_stock,
             'notes' => 'GR #' . ($gr->gr_number ?? $gr->id) . ' | Supplier: ' . $supplierName,
