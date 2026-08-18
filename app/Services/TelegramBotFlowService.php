@@ -118,6 +118,9 @@ class TelegramBotFlowService
             case '/link':
                 $this->cmdLink($chatId, $text, $session);
                 break;
+            case '/laporan':
+                $this->cmdLaporan($chatId, $session);
+                break;
             default:
                 $this->tg->sendMessage($chatId, "❌ Perintah tidak dikenal.\nKetik /menu untuk bantuan.");
         }
@@ -354,9 +357,36 @@ class TelegramBotFlowService
         $menu = "📋 <b>MENU UTAMA ERP</b>\n\n"
             . "/pos — Transaksi POS (jual cepat)\n"
             . "/so — Buat Sales Order\n"
-            . "/cekharga [kode] — Cek stok & harga\n\n"
+            . "/cekharga [kode] — Cek stok & harga\n"
+            . "/laporan — Laporan harian bisnis\n\n"
             . "Ketik perintah di atas untuk mulai.";
         $this->tg->sendMessage($chatId, $menu);
+    }
+
+    protected function cmdLaporan(string $chatId, TelegramSession $session): void
+    {
+        if (!$session->user_id) {
+            $this->tg->sendMessage($chatId, "Silakan /start untuk login dulu.");
+            return;
+        }
+
+        $user = User::find($session->user_id);
+        if (!$user || !$user->tenant_id) {
+            $this->tg->sendMessage($chatId, "❌ Akun tidak memiliki tenant. Hubungi admin.");
+            return;
+        }
+
+        $this->tg->sendMessage($chatId, "⏳ Menyusun laporan harian...");
+
+        $service = new \App\Services\DailyReportService();
+        $report = $service->buildReport($user->tenant_id, $user->tenant?->name);
+
+        try {
+            $this->tg->sendMessage($chatId, $report);
+        } catch (\Exception $e) {
+            Log::error('cmdLaporan gagal kirim', ['chatId' => $chatId, 'error' => $e->getMessage()]);
+            $this->tg->sendMessage($chatId, "❌ Gagal mengirim laporan. Coba lagi nanti.");
+        }
     }
 
     protected function cmdCekHarga(string $chatId, string $text): void

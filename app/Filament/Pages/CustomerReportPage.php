@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Exports\CustomerReportExport;
 use App\Models\Customer;
 use App\Models\SalesOrder;
+use App\Models\SalesOrderDetail;
 use Filament\Forms\Components\DatePicker;
 use Filament\Pages\Page;
 use Filament\Tables\Actions\Action;
@@ -212,10 +213,40 @@ class CustomerReportPage extends Page implements HasTable
                             ->when($dari, fn ($q) => $q->whereDate('date', '>=', $dari))
                             ->when($sampai, fn ($q) => $q->whereDate('date', '<=', $sampai))
                             ->orderByDesc('date')
-                            ->get(['so_number', 'date', 'status', 'total_amount', 'total_cost', 'profit']);
+                            ->get(['id', 'so_number', 'date', 'status', 'total_amount', 'total_cost', 'profit']);
 
                         return view('filament.pages.customer-report-orders', [
                             'orders' => $soQuery,
+                        ]);
+                    }),
+
+                Action::make('viewProducts')
+                    ->label('Lihat Produk')
+                    ->icon('heroicon-o-cube')
+                    ->color('info')
+                    ->modalHeading(fn (Customer $record) => 'Produk dibeli - ' . $record->name)
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Tutup')
+                    ->modalContent(function (Customer $record) {
+                        $periode = $this->tableFilters['periode'] ?? [];
+                        $dari = $periode['dari'] ?? null;
+                        $sampai = $periode['sampai'] ?? null;
+
+                        $details = SalesOrderDetail::query()
+                            ->whereHas('salesOrder', function (Builder $q) use ($record, $dari, $sampai) {
+                                $q->where('customer_id', $record->id)
+                                    ->where('status', '!=', 'CANCEL')
+                                    ->when($dari, fn ($qq) => $qq->whereDate('date', '>=', $dari))
+                                    ->when($sampai, fn ($qq) => $qq->whereDate('date', '<=', $sampai));
+                            })
+                            ->selectRaw('product_id, SUM(qty) as total_qty, SUM(subtotal) as total_subtotal')
+                            ->with('product:id,code,name')
+                            ->groupBy('product_id')
+                            ->orderByDesc('total_qty')
+                            ->get();
+
+                        return view('filament.pages.customer-report-products', [
+                            'details' => $details,
                         ]);
                     }),
             ])
