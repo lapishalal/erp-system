@@ -14,7 +14,8 @@ class DailyReport extends Command
     protected $signature = 'daily:report
         {--tenant= : Kirim hanya untuk tenant tertentu (opsional)}
         {--chat= : Override chat_id tujuan}
-        {--owners : Kirim juga ke user Owner/Admin yang sudah link Telegram}';
+        {--owners : Kirim juga ke user Owner/Admin yang sudah link Telegram}
+        {--preview : Tampilkan isi laporan ke console, tanpa kirim Telegram}';
 
     protected $description = 'Kirim laporan harian bisnis ke Telegram owner.';
 
@@ -23,29 +24,36 @@ class DailyReport extends Command
         $service = new DailyReportService();
         $tg = new TelegramService();
 
+        $preview = (bool) $this->option('preview');
+
         $chatIds = $this->option('chat')
             ? [$this->option('chat')]
             : array_filter([config('services.telegram.chat_id')]);
 
-        if (empty($chatIds)) {
+        if (empty($chatIds) && !$preview) {
             $this->error('TELEGRAM_CHAT_ID belum diisi di .env');
             return self::FAILURE;
         }
 
-        $tenantQuery = Tenant::query();
-        if ($tenantId = $this->option('tenant')) {
-            $tenantQuery->where('id', $tenantId);
-        }
-        $tenants = $tenantQuery->where('is_active', true)->get();
-
+        $tenants = $this->resolveTenants();
         if ($tenants->isEmpty()) {
-            $this->warn('Tidak ada tenant aktif.');
-            return self::SUCCESS;
+            $this->error('Tidak ditemukan tenant aktif. Pastikan tabel tenants terisi, atau user punya tenant_id.');
+            return self::FAILURE;
         }
 
         $sent = 0;
         foreach ($tenants as $tenant) {
+            $this->info('Menyusun laporan untuk tenant: ' . $tenant->name . ' (' . $tenant->id . ')');
+
             $report = $service->buildReport($tenant->id, $tenant->name);
+
+            if ($preview) {
+                $this->line('----------------------------------------');
+                $this->line($report);
+                $this->line('----------------------------------------');
+                continue;
+            }
+
             $targets = $chatIds;
 
             if ($this->option('owners')) {
@@ -63,6 +71,7 @@ class DailyReport extends Command
                 try {
                     $tg->sendMessage((string) $chatId, $report);
                     $sent++;
+                    $this->info("Terkirim ke chat {$chatId}.");
                 } catch (\Exception $e) {
                     Log::error('daily:report gagal kirim', ['chat_id' => $chatId, 'error' => $e->getMessage()]);
                     $this->error("Gagal kirim ke {$chatId}: " . $e->getMessage());
@@ -70,7 +79,36 @@ class DailyReport extends Command
             }
         }
 
-        $this->info("Selesai. Laporan terkirim ke {$sent} chat.");
+        if (!$preview) {
+            $this->info("Selesai. Laporan terkirim ke {$sent} chat.");
+        }
+
         return self::SUCCESS;
+    }
+
+    /**
+     * Temukan tenant untuk laporan:
+     * 1. --tenant eksplisit
+     * 2. Tabel tenants (aktif)
+     * 3. Fallback: tenant_id unik dari user yang punya telegram_chat_id
+     */
+    private function resolveTenants()
+    {
+        if ($tenantId = $this->option('tenant')) {
+            $tenant = Tenant::find($tenantId);
+            return $tenant ? collect([$tenant]) : collect();
+        }
+
+        $tenants = Tenant::where('is_active', true)->orderBy('name')->get();
+        if ($tenants->isNotEmpty()) {
+            return $tenants;
+        }
+
+        $tenantIds = User::whereNotNull('tenant_id')
+            ->whereNotNull('telegram_chat_id')
+            ->distinct()
+            ->pluck('tenant_id');
+
+        return Tenant::whereIn('id', $tenantIds)->get();
     }
 }

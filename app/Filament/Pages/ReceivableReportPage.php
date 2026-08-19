@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Models\Customer;
 use App\Models\SalesInvoice;
+use App\Filament\Resources\SalesInvoiceResource;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -36,7 +37,8 @@ class ReceivableReportPage extends Page implements HasForms
     public function mount(): void
     {
         $this->form->fill([
-            'as_of' => now()->format('Y-m-d'),
+            'dari' => null,
+            'sampai' => null,
         ]);
     }
 
@@ -44,22 +46,33 @@ class ReceivableReportPage extends Page implements HasForms
     {
         return $form
             ->schema([
-                DatePicker::make('as_of')
-                    ->label('Per Tanggal')
-                    ->required()
-                    ->default(now()),
+                DatePicker::make('dari')
+                    ->label('Dari Tanggal Order')
+                    ->placeholder('Semua'),
+                DatePicker::make('sampai')
+                    ->label('Sampai Tanggal Order')
+                    ->placeholder('Semua'),
             ])
             ->statePath('data');
     }
 
     public function getReportData(): array
     {
-        $asOf = $this->data['as_of'] ?? now()->format('Y-m-d');
+        $dari = $this->data['dari'] ?? null;
+        $sampai = $this->data['sampai'] ?? null;
 
-        $invoices = SalesInvoice::with('customer')
+        // As-of untuk aging: mengikuti tanggal "Sampai", fallback ke hari ini
+        $asOf = $sampai ?? now()->format('Y-m-d');
+
+        $invoices = SalesInvoice::with('customer', 'salesOrder')
             ->whereIn('status', ['UNPAID', 'PARTIAL', 'OVERDUE'])
+            ->when($dari || $sampai, function ($q) use ($dari, $sampai) {
+                $q->whereHas('salesOrder', function ($sq) use ($dari, $sampai) {
+                    $sq->when($dari, fn ($qq) => $qq->whereDate('date', '>=', $dari))
+                        ->when($sampai, fn ($qq) => $qq->whereDate('date', '<=', $sampai));
+                });
+            })
             ->orderBy('customer_id')
-            ->orderBy('due_date')
             ->get();
 
         $buckets = ['current' => 0, '1_30' => 0, '31_60' => 0, '61_90' => 0, 'above_90' => 0];
@@ -85,24 +98,34 @@ class ReceivableReportPage extends Page implements HasForms
             }
 
             return (object) [
+                'id' => $inv->id,
                 'customer' => $inv->customer?->name ?? '-',
                 'invoice_number' => $inv->invoice_number,
+                'invoice_url' => SalesInvoiceResource::getUrl('view', ['record' => $inv]),
+                'so_number' => $inv->salesOrder?->so_number ?? '-',
+                'order_date' => $inv->salesOrder?->date,
                 'due_date' => $inv->due_date,
                 'total' => (float) $inv->total,
                 'paid' => (float) $inv->paid_amount,
                 'remaining' => $remaining,
                 'days_overdue' => max(0, (int) $daysOverdue),
                 'bucket' => $bucket,
+                'needs_check' => $daysOverdue > 10,
             ];
         });
 
-        $totalRemaining = $rows->sum('remaining');
+        $needsCheck = $rows->filter(fn ($row) => $row->needs_check)->values();
 
         return [
+            'dari' => $dari,
+            'sampai' => $sampai,
             'as_of' => $asOf,
             'rows' => $rows,
             'buckets' => $buckets,
-            'total_remaining' => $totalRemaining,
+            'total_remaining' => $rows->sum('remaining'),
+            'needs_check' => $needsCheck,
+            'needs_check_count' => $needsCheck->count(),
+            'needs_check_total' => $needsCheck->sum('remaining'),
             'customer_count' => Customer::whereHas('salesInvoices', function ($q) {
                 $q->whereIn('status', ['UNPAID', 'PARTIAL', 'OVERDUE']);
             })->count(),

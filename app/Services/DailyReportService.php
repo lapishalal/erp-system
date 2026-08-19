@@ -12,12 +12,14 @@ use App\Models\PurchaseOrder;
 use App\Models\SalesInvoice;
 use App\Models\SalesOrder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class DailyReportService
 {
     /**
      * Susun teks laporan harian untuk satu tenant.
      * Semua query difilter tenant_id eksplisit karena CLI tidak punya Auth::user().
+     * Setiap seksi dibungkus try/catch agar satu tabel bermasalah tidak menggagalkan seluruh laporan.
      */
     public function buildReport(string $tenantId, ?string $tenantName = null): string
     {
@@ -25,45 +27,64 @@ class DailyReportService
         $yesterday = now()->subDay()->startOfDay();
         $startOfMonth = now()->startOfMonth();
 
-        $revenueToday = SalesInvoice::where('tenant_id', $tenantId)->whereDate('date', $today)->sum('total');
-        $revenueYesterday = SalesInvoice::where('tenant_id', $tenantId)->whereDate('date', $yesterday)->sum('total');
-        $revenueMtd = SalesInvoice::where('tenant_id', $tenantId)->whereDate('date', '>=', $startOfMonth)->sum('total');
-
-        $profitToday = SalesOrder::where('tenant_id', $tenantId)
+        // ===== OMSET & PROFIT =====
+        $revenueToday = $this->safe(fn () => SalesInvoice::where('tenant_id', $tenantId)->whereDate('date', $today)->sum('total'), 0);
+        $revenueYesterday = $this->safe(fn () => SalesInvoice::where('tenant_id', $tenantId)->whereDate('date', $yesterday)->sum('total'), 0);
+        $revenueMtd = $this->safe(fn () => SalesInvoice::where('tenant_id', $tenantId)->whereDate('date', '>=', $startOfMonth)->sum('total'), 0);
+        $profitToday = $this->safe(fn () => SalesOrder::where('tenant_id', $tenantId)
             ->whereDate('date', $today)
             ->whereIn('status', ['OPEN', 'PARTIAL', 'COMPLETE'])
-            ->sum('profit');
+            ->sum('profit'), 0);
+        $soToday = $this->safe(fn () => SalesOrder::where('tenant_id', $tenantId)->whereDate('date', $today)->count(), 0);
+        $soPending = $this->safe(fn () => SalesOrder::where('tenant_id', $tenantId)->whereIn('status', ['OPEN', 'PARTIAL'])->count(), 0);
+        $doToday = $this->safe(fn () => DeliveryOrder::where('tenant_id', $tenantId)->whereDate('date', $today)->count(), 0);
 
-        $soToday = SalesOrder::where('tenant_id', $tenantId)->whereDate('date', $today)->count();
-        $soPending = SalesOrder::where('tenant_id', $tenantId)->whereIn('status', ['OPEN', 'PARTIAL'])->count();
-        $doToday = DeliveryOrder::where('tenant_id', $tenantId)->whereDate('date', $today)->count();
-
-        $cashInToday = (float) CashIn::where('tenant_id', $tenantId)->whereDate('date', $today)->sum('amount');
-        $cashOutToday = (float) CashOut::where('tenant_id', $tenantId)->whereDate('date', $today)->sum('amount');
-        $totalCashIn = (float) CashIn::where('tenant_id', $tenantId)->sum('amount');
-        $totalCashOut = (float) CashOut::where('tenant_id', $tenantId)->sum('amount');
+        // ===== KAS =====
+        $cashInToday = $this->safe(fn () => (float) CashIn::where('tenant_id', $tenantId)->whereDate('date', $today)->sum('amount'), 0.0);
+        $cashOutToday = $this->safe(fn () => (float) CashOut::where('tenant_id', $tenantId)->whereDate('date', $today)->sum('amount'), 0.0);
+        $totalCashIn = $this->safe(fn () => (float) CashIn::where('tenant_id', $tenantId)->sum('amount'), 0.0);
+        $totalCashOut = $this->safe(fn () => (float) CashOut::where('tenant_id', $tenantId)->sum('amount'), 0.0);
         $cashPosition = max(0, $totalCashIn - $totalCashOut);
 
-        $receivables = SalesInvoice::where('tenant_id', $tenantId)
-            ->where('status', '!=', 'PAID')
-            ->get()
-            ->filter(fn ($inv) => (float) $inv->total > (float) $inv->paid_amount);
+        // ===== PIUTANG =====
+        $receivables = collect();
+        $arTotal = 0.0;
+        $arOverdue = collect();
+        $arOverdueTotal = 0.0;
+        $arDueSoon = collect();
+        $arDueSoonTotal = 0.0;
+        try {
+            $receivables = SalesInvoice::where('tenant_id', $tenantId)
+                ->where('status', '!=', 'PAID')
+                ->get()
+                ->filter(fn ($inv) => (float) $inv->total > (float) $inv->paid_amount);
+            $arTotal = $receivables->sum(fn ($inv) => (float) $inv->total - (float) $inv->paid_amount);
+            $arOverdue = $receivables->filter(fn ($inv) => $inv->due_date && $inv->due_date->lt(now()->startOfDay()));
+            $arOverdueTotal = $arOverdue->sum(fn ($inv) => (float) $inv->total - (float) $inv->paid_amount);
+            $arDueSoon = $receivables->filter(fn ($inv) => $inv->due_date && $inv->due_date->between(now()->startOfDay(), now()->addDays(7)->endOfDay()));
+            $arDueSoonTotal = $arDueSoon->sum(fn ($inv) => (float) $inv->total - (float) $inv->paid_amount);
+        } catch (\Exception $e) {
+            $this->logError($tenantId, 'piutang', $e);
+        }
 
-        $arTotal = $receivables->sum(fn ($inv) => (float) $inv->total - (float) $inv->paid_amount);
-        $arOverdue = $receivables->filter(fn ($inv) => $inv->due_date && $inv->due_date->lt(now()->startOfDay()));
-        $arOverdueTotal = $arOverdue->sum(fn ($inv) => (float) $inv->total - (float) $inv->paid_amount);
-        $arDueSoon = $receivables->filter(fn ($inv) => $inv->due_date && $inv->due_date->between(now()->startOfDay(), now()->addDays(7)->endOfDay()));
-        $arDueSoonTotal = $arDueSoon->sum(fn ($inv) => (float) $inv->total - (float) $inv->paid_amount);
+        // ===== HUTANG & PEMBELIAN =====
+        $payables = collect();
+        $apTotal = 0.0;
+        $poPending = 0;
+        $poToday = 0;
+        try {
+            $payables = PurchaseInvoice::where('tenant_id', $tenantId)
+                ->where('status', '!=', 'PAID')
+                ->get()
+                ->filter(fn ($inv) => (float) $inv->total > (float) $inv->paid_amount);
+            $apTotal = $payables->sum(fn ($inv) => (float) $inv->total - (float) $inv->paid_amount);
+            $poPending = PurchaseOrder::where('tenant_id', $tenantId)->whereIn('status', ['ORDERED', 'PARTIAL'])->count();
+            $poToday = PurchaseOrder::where('tenant_id', $tenantId)->whereDate('date', $today)->count();
+        } catch (\Exception $e) {
+            $this->logError($tenantId, 'hutang/pembelian', $e);
+        }
 
-        $payables = PurchaseInvoice::where('tenant_id', $tenantId)
-            ->where('status', '!=', 'PAID')
-            ->get()
-            ->filter(fn ($inv) => (float) $inv->total > (float) $inv->paid_amount);
-        $apTotal = $payables->sum(fn ($inv) => (float) $inv->total - (float) $inv->paid_amount);
-
-        $poPending = PurchaseOrder::where('tenant_id', $tenantId)->whereIn('status', ['ORDERED', 'PARTIAL'])->count();
-        $poToday = PurchaseOrder::where('tenant_id', $tenantId)->whereDate('date', $today)->count();
-
+        // ===== STOK =====
         $stockValue = 0;
         $criticalStock = collect();
         try {
@@ -82,28 +103,40 @@ class DailyReportService
                 ->limit(10)
                 ->get();
         } catch (\Exception $e) {
+            $this->logError($tenantId, 'stok', $e);
         }
 
-        $mpPending = MarketplaceOrder::where('tenant_id', $tenantId)->whereNull('sales_order_id')->where('is_hidden', false)->count();
-        $mpNeedsReview = MarketplaceOrder::where('tenant_id', $tenantId)->where('needs_review', true)->count();
-        $mpToday = MarketplaceOrder::where('tenant_id', $tenantId)->whereDate('processed_at', $today)->orWhere(function ($q) use ($tenantId, $today) {
-            $q->where('tenant_id', $tenantId)->whereDate('created_at', $today);
-        })->count();
+        // ===== MARKETPLACE =====
+        $mpPending = 0;
+        $mpNeedsReview = 0;
+        $mpToday = 0;
+        $zeroSettled = 0;
+        try {
+            $mpPending = MarketplaceOrder::where('tenant_id', $tenantId)->whereNull('sales_order_id')->where('is_hidden', false)->count();
+            $mpNeedsReview = MarketplaceOrder::where('tenant_id', $tenantId)->where('needs_review', true)->count();
+            $mpToday = MarketplaceOrder::where('tenant_id', $tenantId)
+                ->where(function ($q) use ($today) {
+                    $q->whereDate('processed_at', $today)->orWhereDate('created_at', $today);
+                })
+                ->count();
 
-        // Kasus "settlement 0": invoice TikTok PAID tapi cash-in 0 (bekas proses lama)
-        $zeroSettled = MarketplaceOrder::where('tenant_id', $tenantId)
-            ->where('platform', 'tiktok')
-            ->whereNotNull('sales_order_id')
-            ->where(function ($q) {
-                $q->where('needs_review', false)->orWhereNull('needs_review');
-            })
-            ->whereHas('salesOrder.salesInvoices', fn ($q) => $q->where('status', 'PAID'))
-            ->whereHas('salesOrder.salesInvoices.cashIns', fn ($q) => $q->where('amount', 0))
-            ->count();
+            // Kasus "settlement 0": invoice TikTok PAID tapi cash-in 0 (bekas proses lama)
+            $zeroSettled = MarketplaceOrder::where('tenant_id', $tenantId)
+                ->where('platform', 'tiktok')
+                ->whereNotNull('sales_order_id')
+                ->where(function ($q) {
+                    $q->where('needs_review', false)->orWhereNull('needs_review');
+                })
+                ->whereHas('salesOrder.salesInvoices', fn ($q) => $q->where('status', 'PAID'))
+                ->whereHas('salesOrder.salesInvoices.cashIns', fn ($q) => $q->where('amount', 0))
+                ->count();
+        } catch (\Exception $e) {
+            $this->logError($tenantId, 'marketplace', $e);
+        }
 
         $lines = [];
         $lines[] = '📊 <b>LAPORAN HARIAN ERP</b>';
-        $lines[] = '📅 ' . now('Asia/Jakarta')->locale('id')->translatedFormat('l, d F Y H:i');
+        $lines[] = '📅 ' . $this->headerDate();
         if ($tenantName) {
             $lines[] = '🏢 <b>' . e($tenantName) . '</b>';
         }
@@ -156,6 +189,33 @@ class DailyReportService
         $lines[] = '— dibuat otomatis oleh ERP System —';
 
         return implode("\n", $lines);
+    }
+
+    private function safe(\Closure $fn, $default)
+    {
+        try {
+            return $fn();
+        } catch (\Exception $e) {
+            Log::warning('daily:report seksi gagal', ['error' => $e->getMessage()]);
+            return $default;
+        }
+    }
+
+    private function logError(string $tenantId, string $section, \Exception $e): void
+    {
+        Log::warning("daily:report seksi {$section} gagal", [
+            'tenant_id' => $tenantId,
+            'error' => $e->getMessage(),
+        ]);
+    }
+
+    private function headerDate(): string
+    {
+        try {
+            return now('Asia/Jakarta')->locale('id')->translatedFormat('l, d F Y H:i');
+        } catch (\Exception $e) {
+            return now()->format('d M Y H:i');
+        }
     }
 
     public function rupiah($value): string
