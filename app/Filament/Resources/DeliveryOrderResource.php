@@ -246,6 +246,20 @@ class DeliveryOrderResource extends Resource
                                         $set('remaining_after', max(0, $remaining - $qty));
                                         $set('stock_after', max(0, $stock - $qty));
                                     })
+                                    ->rules(function (Get $get) {
+                                        $remaining = (int) ($get('remaining_qty') ?? 0);
+                                        $isDropship = (bool) $get('../../is_dropship');
+
+                                        if ($isDropship) {
+                                            return ['max:' . $remaining];
+                                        }
+
+                                        $stock = (int) ($get('available_stock') ?? 0);
+                                        return ['max:' . min($remaining, $stock)];
+                                    })
+                                    ->validationMessages([
+                                        'max' => 'Jumlah kirim melebihi sisa order atau stok gudang yang tersedia.',
+                                    ])
                                     ->hint(function (Get $get) {
                                         $remaining = (int) ($get('remaining_qty') ?? 0);
                                         $isDropship = (bool) $get('../../is_dropship');

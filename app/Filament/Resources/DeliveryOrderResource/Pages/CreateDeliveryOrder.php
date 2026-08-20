@@ -6,6 +6,7 @@ use App\Filament\Resources\DeliveryOrderResource;
 use App\Models\ProductStock;
 use App\Models\SalesOrderDetail;
 use Filament\Resources\Pages\CreateRecord;
+use Illuminate\Support\Facades\Validator;
 
 class CreateDeliveryOrder extends CreateRecord
 {
@@ -15,19 +16,17 @@ class CreateDeliveryOrder extends CreateRecord
     {
         $isDropship = (bool) ($data['is_dropship'] ?? false);
 
-        // Filter hanya item dengan qty > 0
+        $errors = [];
         $filtered = [];
-        foreach ($data['details'] ?? [] as $item) {
+        foreach ($data['details'] ?? [] as $index => $item) {
             $qty = (int) ($item['qty'] ?? 0);
             if ($qty <= 0) {
                 continue;
             }
 
-            // Validasi max
             $soDetail = SalesOrderDetail::find($item['so_detail_id'] ?? null);
             $remaining = $soDetail ? $soDetail->remaining_qty : 0;
 
-            // Dropship tidak perlu stok gudang
             if ($isDropship) {
                 $max = $remaining;
             } else {
@@ -39,7 +38,8 @@ class CreateDeliveryOrder extends CreateRecord
             }
 
             if ($qty > $max) {
-                $qty = $max;
+                $errors['details.' . $index . '.qty'] = 'Jumlah kirim (' . $qty . ') melebihi maksimal ' . $max . ' unit (' .
+                    ($soDetail?->product?->name ?? 'barang') . ').';
             }
 
             if ($qty > 0) {
@@ -50,6 +50,10 @@ class CreateDeliveryOrder extends CreateRecord
                     'notes' => $item['notes'] ?? null,
                 ];
             }
+        }
+
+        if (!empty($errors)) {
+            throw \Illuminate\Validation\ValidationException::withMessages($errors);
         }
 
         $data['details'] = $filtered;

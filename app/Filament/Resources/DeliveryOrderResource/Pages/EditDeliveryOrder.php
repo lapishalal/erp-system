@@ -46,15 +46,14 @@ class EditDeliveryOrder extends EditRecord
     {
         $isDropship = (bool) $record->is_dropship;
 
-        // Filter hanya item dengan qty > 0
+        $errors = [];
         $filtered = [];
-        foreach ($data['details'] ?? [] as $item) {
+        foreach ($data['details'] ?? [] as $index => $item) {
             $qty = (int) ($item['qty'] ?? 0);
             if ($qty <= 0) {
                 continue;
             }
 
-            // Validasi max
             $soDetail = SalesOrderDetail::find($item['so_detail_id'] ?? null);
             $remaining = $soDetail ? $soDetail->remaining_qty : 0;
 
@@ -70,7 +69,8 @@ class EditDeliveryOrder extends EditRecord
             }
 
             if ($qty > $max) {
-                $qty = $max;
+                $errors['details.' . $index . '.qty'] = 'Jumlah kirim (' . $qty . ') melebihi maksimal ' . $max . ' unit (' .
+                    ($soDetail?->product?->name ?? 'barang') . ').';
             }
 
             if ($qty > 0) {
@@ -81,6 +81,10 @@ class EditDeliveryOrder extends EditRecord
                     'notes' => $item['notes'] ?? null,
                 ];
             }
+        }
+
+        if (!empty($errors)) {
+            throw \Illuminate\Validation\ValidationException::withMessages($errors);
         }
 
         $data['details'] = $filtered;

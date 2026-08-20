@@ -351,19 +351,31 @@ class SalesOrderResource extends Resource
                                                     ->numeric()
                                                     ->required()
                                                     ->minValue(1)
-                                                    ->maxValue(fn (Forms\Get $get) => $get('max_qty'))
-                                                    ->hint(function (Forms\Get $get) {
+                                                    ->maxValue(function (Forms\Get $get) {
+                                                        $maxQty = (int) ($get('max_qty') ?? 0);
                                                         $productId = $get('product_id');
                                                         $warehouseId = $get('../../warehouse_id');
                                                         if ($productId && $warehouseId) {
                                                             $stock = ProductStock::where('product_id', $productId)
                                                                 ->where('warehouse_id', $warehouseId)
                                                                 ->first();
-                                                            $stok = $stock?->physical_stock ?? 0;
-                                                            $warn = ($stok < ($get('qty') ?? 0)) ? '⚠️ ' : '✅ ';
-                                                            return $warn . 'Stok gudang: ' . number_format($stok, 0, ',', '.') . ' unit';
+                                                            return min($maxQty, (int) ($stock?->available_stock ?? 0));
                                                         }
-                                                        return '';
+                                                        return $maxQty;
+                                                    })
+                                                    ->hint(function (Forms\Get $get) {
+                                                        $maxQty = (int) ($get('max_qty') ?? 0);
+                                                        $productId = $get('product_id');
+                                                        $warehouseId = $get('../../warehouse_id');
+                                                        if ($productId && $warehouseId) {
+                                                            $stock = ProductStock::where('product_id', $productId)
+                                                                ->where('warehouse_id', $warehouseId)
+                                                                ->first();
+                                                            $stok = (int) ($stock?->available_stock ?? 0);
+                                                            $max = min($maxQty, $stok);
+                                                            return 'Max kirim: ' . $max . ' unit | Stok gudang: ' . number_format($stok, 0, ',', '.') . ' unit';
+                                                        }
+                                                        return 'Max: ' . $maxQty . ' unit';
                                                     }),
                                             ])
                                             ->columns(4)
